@@ -86,10 +86,45 @@ def parse_brief_created_date(value: str) -> datetime:
     return datetime.strptime(value, "%m/%d/%Y, %H:%M")
 
 
+def build_brief_creation_email_html(brief_id: str) -> str:
+    return f"""
+<div style="margin:0!important;padding:0!important">
+  <div role="article" aria-label="An email from Your Brand Name" lang="en" style="background-color:white;color:#2b2b2b;font-family:'Open Sans',HelveticaNeue,Arial,Helvetica,sans-serif;font-size:18px;font-weight:400;line-height:28px;margin:0 auto;max-width:600px;padding:40px 20px 40px 20px">
+    <header>
+      <center>
+        <img src="https://joule.weareamnet.com/amnet/public/siteelements/placeholder.png" alt="" width="80" style="height:auto">
+      </center>
+      <h2 style="color:#000000;font-size:32px;font-weight:800;line-height:32px;margin:48px 0;text-align:center">
+        Brief has been created successfully
+      </h2>
+    </header>
+    <img src="https://joule.weareamnet.com/amnet/public/siteelements/Joule_inline_colur_filled.png" alt="" width="600" border="0" style="border-radius:4px;display:block;max-width:100%;min-width:100px;width:100%">
+    <h2 style="color:#000000;font-size:28px;font-weight:600;line-height:32px;margin:48px 0 24px 0;text-align:center">
+      Brief ID: {brief_id}
+    </h2>
+    <p>Please make a note of this Brief ID. If you would like to update or modify this brief in the future, simply return to the chatbot using the link below and reference your Brief ID.</p>
+    <center>
+      <div style="margin:48px 0">
+        <a href="https://waa.mdbgo.io/" target="_blank">
+          <button style="background-color:#ee5a24;border:none;border-radius:4px;color:#ffffff;display:inline-block;font-family:'Open Sans',HelveticaNeue,Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;line-height:60px;text-align:center;text-decoration:none;width:300px">
+            Chatbot Link
+          </button>
+        </a>
+      </div>
+    </center>
+  </div>
+</div>
+""".strip()
+
+
 def send_brief_creation_email(item: dict[str, Any]) -> None:
     created_date = get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
+    brief_id = str(item.get("id", ""))
     body = (
-        "A new brief was created by ChatBot.\n\n"
+        "Brief has been created successfully.\n\n"
+        f"Brief ID: {brief_id}\n"
         f"Created date: {created_date}\n"
+        "Chatbot link: https://waa.mdbgo.io/\n"
     )
-    send_email(BRIEF_EMAIL_SUBJECT, body)
+    html_body = build_brief_creation_email_html(brief_id)
+    send_email(BRIEF_EMAIL_SUBJECT, body, html_body=html_body)
