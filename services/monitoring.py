@@ -7,8 +7,7 @@ from typing import Any
 import requests
 
 from config.constants import (
-    BRIEF_CREATED_BY_CHATBOT_FIELD_NAME,
-    BRIEF_CREATED_BY_CHATBOT_VALUE,
+    BRIEF_CREATED_DATE_FIELD_NAME,
     BRIEF_EMAIL_SUBJECT,
     BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
     BRIEF_NUMBER_FIELD_NAME,
@@ -22,12 +21,6 @@ from schemas.monitoring import MonitoringResult
 from utils import get_token
 from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
 from utils.mailer import send_email
-from utils.brief_storage import (
-    brief_exists,
-    is_create_email_sent,
-    mark_create_email_sent,
-    store_chatbot_brief,
-)
 from utils.monitoring import (
     build_query,
     cutoff_timestamp,
@@ -143,28 +136,18 @@ def _log_fetch_window(label: str) -> tuple[datetime, datetime]:
 
 def _process_recent_briefs(
     items: list[dict[str, Any]],
-    window_start: datetime,
-    window_end: datetime,
 ) -> None:
     for item in items:
+        # Condition one: Created Date must match Last Modified Date.
+        created_date = get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
         last_modified_date = get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME)
-        if not last_modified_date:
-            continue
+        
+        created_at = parse_brief_last_modified_date(created_date)
         modified_at = parse_brief_last_modified_date(last_modified_date)
-        if modified_at < window_start or modified_at > window_end:
-            continue
-        if (
-            get_field_value(item, BRIEF_CREATED_BY_CHATBOT_FIELD_NAME)
-            != BRIEF_CREATED_BY_CHATBOT_VALUE
-        ):
-            continue
-        brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
-        if is_create_email_sent(brief_id):
-            continue
-        if not brief_exists(brief_id):
-            store_chatbot_brief(item)
-        send_brief_creation_email(brief_id)
-        mark_create_email_sent(brief_id)
+        
+        if modified_at == created_at:
+            brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+            send_brief_creation_email(brief_id)
 
 
 def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
@@ -183,7 +166,7 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
             cutoff,
         )
         brief_items = fetch_all_pages(session, settings.search_url, token, brief_query)
-        _process_recent_briefs(brief_items, brief_window_start, brief_window_end)
+        _process_recent_briefs(brief_items)
         results.append(MonitoringResult(monitor=brief_monitor, items=brief_items))
 
         _log_fetch_window("jobs")
