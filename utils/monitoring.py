@@ -27,13 +27,17 @@ def build_query(
     fields: dict[str, str],
     cutoff: str,
     select_all_fields: bool = False,
+    filter_condition: str | None = None,
 ) -> str:
     selected_fields = "*"
     if not select_all_fields:
         selected_fields = ", ".join(_crm_field(field_id) for field_id in fields.values())
+    conditions = [f"{_crm_field(fields[query_field_name])} >= '{cutoff}'"]
+    if filter_condition:
+        conditions.append(filter_condition)
     query = (
         f"SELECT {selected_fields} FROM MODULE_{module_id} "
-        f"WHERE {_crm_field(fields[query_field_name])} > '{cutoff}'"
+        f"WHERE {' AND '.join(conditions)}"
     )
     return query
 

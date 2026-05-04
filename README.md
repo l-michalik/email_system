@@ -1,36 +1,74 @@
 # Email System
 
-`main.py` runs one monitoring pass and logs each major step to stdout.
-Chatbot-created briefs are stored locally in `data/briefs.sqlite3`.
+System monitors Joule CRM for chatbot-created briefs and sends email notifications for:
 
-## Structure
+- brief creation
+- qualifying brief updates
+- jobs moved to Client Review
 
-- `clients/` contains external API clients.
-- `services/monitoring.py` coordinates one monitoring pass.
-- `services/email_notifications.py` contains notification rules and email dispatch.
-- `utils/brief_storage.py` owns local SQLite persistence.
-- `utils/monitoring.py` contains CRM query and field parsing helpers.
+Monitoring is designed to run every 5 minutes.
 
-Run it once:
+## Bootstrap Existing Data
+
+If you want the local database to start with existing chatbot briefs and related jobs, run:
+
+```bash
+uv run python scripts/fetch_briefs.py
+```
+
+This is useful before enabling cron in an environment that already has active data in Joule.
+
+## Run One Monitoring Pass
 
 ```bash
 uv run python main.py
 ```
 
-Cron example every 5 minutes:
+This command:
 
-```cron
-*/5 * * * * cd /Users/lukaszmichalik/Desktop/email_system && uv run python main.py >> monitor.log 2>&1
+- loads settings from `.env`
+- fetches CRM changes since the last successful sync
+- evaluates notification triggers
+- sends eligible emails
+- updates local snapshots and checkpoints
+
+## Cron: Every 5 Minutes
+
+Open crontab:
+
+```bash
+crontab -e
 ```
 
-Send a test email
+Add this entry:
+
+```cron
+*/5 * * * * cd /Users/lukaszmichalik/Desktop/email_system && /opt/homebrew/bin/uv run python main.py >> /Users/lukaszmichalik/Desktop/email_system/monitor.log 2>&1
+```
+
+If `uv` is already available in cron `PATH`, you can use:
+
+```cron
+*/5 * * * * cd /Users/lukaszmichalik/Desktop/email_system && uv run python main.py >> /Users/lukaszmichalik/Desktop/email_system/monitor.log 2>&1
+```
+
+Recommended checks after adding cron:
+
+- confirm `.env` exists in the repo root
+- run `uv run python main.py` once manually
+- verify `monitor.log` is being written
+- verify the first run creates or updates `data/briefs.sqlite3`
+
+## Manual Email Check
 
 ```bash
 uv run python send_email.py
 ```
 
+## Tests
 
-  Status                                           316 `FD_316`
-{'options': [{'id': 0, 'value': ''}], 'fieldDefinitionId': 4406, 'name': 'Link to Output Files (Client)'}
-'fieldDefinitionId': 229, 'name': 'Assets'
-{'options': [{'id': 0, 'value': '14994'}], 'fieldDefinitionId': 4660, 'name': 'Brief Number'}
+Run:
+
+```bash
+uv run python -m unittest discover -s tests
+```

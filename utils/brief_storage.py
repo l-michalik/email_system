@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime
-from pathlib import Path
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
+from config.constants import CHATBOT_CREATED_BY_OPTION_ID
 from utils.monitoring import get_field_value
 
 
@@ -33,7 +34,10 @@ def _get_option_value(option: dict[str, Any]) -> str | None:
 
 
 def _get_field_values(item: dict[str, Any], field_name: str) -> list[str]:
-    field = next(field for field in item["fields"] if field["name"] == field_name)
+    field = next((field for field in item["fields"] if field["name"] == field_name), None)
+    if field is None:
+        return []
+
     options = field["options"]
     if not options:
         return []
@@ -77,6 +81,16 @@ def _parse_decimal(value: str | None) -> Decimal | None:
         return Decimal(cleaned_value)
     except InvalidOperation:
         return None
+
+
+def _notification_event_key(
+    event_type: str,
+    entity_id: str,
+    event_timestamp: str | None = None,
+) -> str:
+    if event_timestamp:
+        return f"{event_type}:{entity_id}:{event_timestamp}"
+    return f"{event_type}:{entity_id}"
 
 
 def _load_brief_row(brief_number: str) -> dict[str, Any] | None:
@@ -127,6 +141,38 @@ def _load_brief_row(brief_number: str) -> dict[str, Any] | None:
     }
 
 
+def _load_job_row(job_number: str) -> dict[str, Any] | None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _ensure_table_created(connection)
+        row = connection.execute(
+            """
+            SELECT
+                job_number,
+                brief_number,
+                last_modified_date,
+                status,
+                assets,
+                output_files_link
+            FROM chatbot_jobs
+            WHERE job_number = ? LIMIT 1
+            """,
+            (job_number,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "job_number": row[0],
+        "brief_number": row[1],
+        "last_modified_date": row[2],
+        "status": row[3],
+        "assets": row[4],
+        "output_files_link": row[5],
+    }
+
+
 def _brief_values_from_item(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
         get_field_value(item, "Brief Number"),
@@ -139,21 +185,32 @@ def _brief_values_from_item(item: dict[str, Any]) -> tuple[Any, ...]:
         get_field_value(item, "Client Review Deadline"),
         get_field_value(item, "Delivery Deadline"),
         get_field_value(item, "Budget"),
-        _get_json_field_value(item, "Brief Document"),
-        _get_json_field_value(item, "Supporting Documents"),
-        _get_json_field_value(item, "Media Plans"),
+        _get_json_field_value(item, BRIEF_DOCUMENT_FIELD_NAME),
+        _get_json_field_value(item, SUPPORTING_DOCUMENTS_FIELD_NAME),
+        _get_json_field_value(item, MEDIA_PLANS_FIELD_NAME),
+    )
+
+
+def _job_values_from_item(item: dict[str, Any]) -> tuple[str | None, ...]:
+    return (
+        get_field_value(item, "Job Number"),
+        get_field_value(item, "Brief Number"),
+        get_field_value(item, "Last Modified Date"),
+        get_field_value(item, "Status"),
+        get_field_value(item, "Assets"),
+        get_field_value(item, "Link to Output Files (Client)"),
     )
 
 
 def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) -> bool:
-    current_brief_description = get_field_value(current_item, "Brief Description")
-    if previous["Brief Description"] != current_brief_description:
+    current_brief_description = get_field_value(current_item, BRIEF_DESCRIPTION_FIELD_NAME)
+    if previous[BRIEF_DESCRIPTION_FIELD_NAME] != current_brief_description:
         logger.info("Brief %s update detected: description changed", previous["brief_number"])
         return True
 
-    current_brief_sla = get_field_value(current_item, "Brief SLA")
+    current_brief_sla = get_field_value(current_item, BRIEF_SLA_FIELD_NAME)
     if (
-        (previous["Brief SLA"] or "").strip().lower() == "standard sla"
+        (previous[BRIEF_SLA_FIELD_NAME] or "").strip().lower() == "standard sla"
         and (current_brief_sla or "").strip().lower() == "rush sla"
     ):
         logger.info("Brief %s update detected: SLA changed to rush", previous["brief_number"])
@@ -164,9 +221,9 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         logger.info("Brief %s update detected: work type changed", previous["brief_number"])
         return True
 
-    previous_client_review_deadline = _parse_date(previous["Client Review Deadline"])
+    previous_client_review_deadline = _parse_date(previous[CLIENT_REVIEW_DEADLINE_FIELD_NAME])
     current_client_review_deadline = _parse_date(
-        get_field_value(current_item, "Client Review Deadline")
+        get_field_value(current_item, CLIENT_REVIEW_DEADLINE_FIELD_NAME)
     )
     if (
         previous_client_review_deadline
@@ -179,10 +236,8 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         )
         return True
 
-    previous_delivery_deadline = _parse_date(previous["Delivery Deadline"])
-    current_delivery_deadline = _parse_date(
-        get_field_value(current_item, "Delivery Deadline")
-    )
+    previous_delivery_deadline = _parse_date(previous[DELIVERY_DEADLINE_FIELD_NAME])
+    current_delivery_deadline = _parse_date(get_field_value(current_item, DELIVERY_DEADLINE_FIELD_NAME))
     if (
         previous_delivery_deadline
         and current_delivery_deadline
@@ -194,20 +249,16 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         )
         return True
 
-    previous_budget = _parse_decimal(previous["Budget"])
-    current_budget = _parse_decimal(get_field_value(current_item, "Budget"))
-    if (
-        previous_budget is not None
-        and current_budget is not None
-        and current_budget < previous_budget
-    ):
+    previous_budget = _parse_decimal(previous[BUDGET_FIELD_NAME])
+    current_budget = _parse_decimal(get_field_value(current_item, BUDGET_FIELD_NAME))
+    if previous_budget is not None and current_budget is not None and current_budget < previous_budget:
         logger.info("Brief %s update detected: budget decreased", previous["brief_number"])
         return True
 
     for field_name in (
-        "Brief Document",
-        "Supporting Documents",
-        "Media Plans",
+        BRIEF_DOCUMENT_FIELD_NAME,
+        SUPPORTING_DOCUMENTS_FIELD_NAME,
+        MEDIA_PLANS_FIELD_NAME,
     ):
         previous_files = set(previous[field_name])
         current_files = set(_get_field_values(current_item, field_name))
@@ -257,6 +308,25 @@ def _create_table(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sync_state (
+            monitor_label TEXT PRIMARY KEY,
+            last_successful_sync TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sent_notifications (
+            event_key TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            event_timestamp TEXT,
+            sent_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 def _ensure_table_created(connection: sqlite3.Connection) -> None:
@@ -285,6 +355,7 @@ def brief_exists(brief_number: str) -> bool:
 def store_chatbot_brief(item: dict[str, Any]) -> None:
     brief_values = _brief_values_from_item(item)
     logger.info("Storing chatbot brief %s", brief_values[0])
+    create_email_sent = int(bool(brief_values[0]) and is_create_email_sent(brief_values[0]))
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
@@ -309,10 +380,23 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            brief_values + (0,),
+            brief_values + (create_email_sent,),
         )
         connection.commit()
     logger.info("Stored chatbot brief %s", brief_values[0])
+
+
+def save_chatbot_brief(item: dict[str, Any]) -> None:
+    brief_number = get_field_value(item, "Brief Number")
+    if not brief_number:
+        logger.info("Skipping chatbot brief save because Brief Number is missing")
+        return
+
+    if brief_exists(brief_number):
+        update_chatbot_brief(item)
+        return
+
+    store_chatbot_brief(item)
 
 
 def get_chatbot_brief(brief_number: str) -> dict[str, Any] | None:
@@ -358,11 +442,7 @@ def update_chatbot_brief(item: dict[str, Any]) -> None:
                 "IsCreateEmailSent" = ?
             WHERE brief_number = ?
             """,
-            brief_values[1:]
-            + (
-                existing_brief["IsCreateEmailSent"],
-                brief_number,
-            ),
+            brief_values[1:] + (existing_brief["IsCreateEmailSent"], brief_number),
         )
         connection.commit()
     logger.info("Updated chatbot brief %s", brief_number)
@@ -399,13 +479,8 @@ def job_exists(job_number: str) -> bool:
 
 
 def store_chatbot_job(item: dict[str, Any]) -> None:
-    job_number = get_field_value(item, "Job Number")
-    brief_number = get_field_value(item, "Brief Number")
-    last_modified_date = get_field_value(item, "Last Modified Date")
-    status = get_field_value(item, "Status")
-    assets = get_field_value(item, "Assets")
-    output_files_link = get_field_value(item, "Link to Output Files (Client)")
-    logger.info("Storing chatbot job %s for brief %s", job_number, brief_number)
+    job_values = _job_values_from_item(item)
+    logger.info("Storing chatbot job %s for brief %s", job_values[0], job_values[1])
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
@@ -422,34 +497,163 @@ def store_chatbot_job(item: dict[str, Any]) -> None:
             )
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (
-                job_number,
-                brief_number,
-                last_modified_date,
-                status,
-                assets,
-                output_files_link,
-            ),
+            job_values,
         )
         connection.commit()
-    logger.info("Stored chatbot job %s", job_number)
+    logger.info("Stored chatbot job %s", job_values[0])
 
 
-def is_create_email_sent(brief_number: str) -> bool:
+def save_chatbot_job(item: dict[str, Any]) -> None:
+    job_number = get_field_value(item, "Job Number")
+    if not job_number:
+        logger.info("Skipping chatbot job save because Job Number is missing")
+        return
+
+    if job_exists(job_number):
+        update_chatbot_job(item)
+        return
+
+    store_chatbot_job(item)
+
+
+def get_chatbot_job(job_number: str) -> dict[str, Any] | None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    row = _load_job_row(job_number)
+    logger.info("Loaded chatbot job %s: %s", job_number, row is not None)
+    return row
+
+
+def update_chatbot_job(item: dict[str, Any]) -> None:
+    job_number = get_field_value(item, "Job Number")
+    if not job_number:
+        logger.info("Skipping job update because Job Number is missing")
+        return
+
+    existing_job = _load_job_row(job_number)
+    if existing_job is None:
+        logger.info("Skipping job update because job %s is not stored", job_number)
+        return
+
+    job_values = _job_values_from_item(item)
+    logger.info("Updating chatbot job %s", job_number)
+
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _ensure_table_created(connection)
+        connection.execute(
+            """
+            UPDATE chatbot_jobs
+            SET
+                brief_number = ?,
+                last_modified_date = ?,
+                status = ?,
+                assets = ?,
+                output_files_link = ?
+            WHERE job_number = ?
+            """,
+            job_values[1:] + (job_number,),
+        )
+        connection.commit()
+    logger.info("Updated chatbot job %s", job_number)
+
+
+def get_sync_checkpoint(monitor_label: str) -> str | None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
         _ensure_table_created(connection)
         row = connection.execute(
-            'SELECT "IsCreateEmailSent" FROM chatbot_briefs WHERE brief_number = ? LIMIT 1',
-            (brief_number,),
+            """
+            SELECT last_successful_sync
+            FROM sync_state
+            WHERE monitor_label = ? LIMIT 1
+            """,
+            (monitor_label,),
         ).fetchone()
-    sent = bool(row and row[0])
-    logger.info("Create email sent for brief %s: %s", brief_number, sent)
+    checkpoint = row[0] if row else None
+    logger.info("Loaded sync checkpoint for %s: %s", monitor_label, checkpoint)
+    return checkpoint
+
+
+def set_sync_checkpoint(monitor_label: str, timestamp: str) -> None:
+    logger.info("Saving sync checkpoint for %s: %s", monitor_label, timestamp)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _ensure_table_created(connection)
+        connection.execute(
+            """
+            INSERT INTO sync_state (monitor_label, last_successful_sync)
+            VALUES (?, ?)
+            ON CONFLICT(monitor_label)
+            DO UPDATE SET last_successful_sync = excluded.last_successful_sync
+            """,
+            (monitor_label, timestamp),
+        )
+        connection.commit()
+
+
+def has_sent_notification(
+    event_type: str,
+    entity_id: str,
+    event_timestamp: str | None = None,
+) -> bool:
+    event_key = _notification_event_key(event_type, entity_id, event_timestamp)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _ensure_table_created(connection)
+        row = connection.execute(
+            "SELECT 1 FROM sent_notifications WHERE event_key = ? LIMIT 1",
+            (event_key,),
+        ).fetchone()
+    sent = row is not None
+    logger.info("Notification sent for %s: %s", event_key, sent)
     return sent
+
+
+def record_notification(
+    event_type: str,
+    entity_id: str,
+    event_timestamp: str | None = None,
+) -> None:
+    event_key = _notification_event_key(event_type, entity_id, event_timestamp)
+    sent_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    logger.info("Recording notification %s at %s", event_key, sent_at)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _ensure_table_created(connection)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO sent_notifications (
+                event_key,
+                event_type,
+                entity_id,
+                event_timestamp,
+                sent_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (event_key, event_type, entity_id, event_timestamp, sent_at),
+        )
+        connection.commit()
+
+
+def is_chatbot_brief(brief_number: str) -> bool:
+    brief = _load_brief_row(brief_number)
+    if brief is None:
+        logger.info("Chatbot brief check failed for %s: brief not found", brief_number)
+        return False
+
+    is_chatbot_created = brief["created_by_chatbot"] == CHATBOT_CREATED_BY_OPTION_ID
+    logger.info("Chatbot brief check for %s: %s", brief_number, is_chatbot_created)
+    return is_chatbot_created
+
+
+def is_create_email_sent(brief_number: str) -> bool:
+    return has_sent_notification("brief_created", brief_number)
 
 
 def mark_create_email_sent(brief_number: str) -> None:
     logger.info("Marking create email sent for brief %s", brief_number)
+    record_notification("brief_created", brief_number)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
         _ensure_table_created(connection)

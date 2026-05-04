@@ -11,6 +11,7 @@ class ModuleMonitor:
     query_field_name: str
     fields: dict[str, str]
     select_all_fields: bool = False
+    filter_condition: str | None = None
 
 
 @dataclass(frozen=True)

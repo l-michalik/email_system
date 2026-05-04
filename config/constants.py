@@ -5,6 +5,7 @@ from schemas.monitoring import ModuleMonitor
 POLL_WINDOW_MINUTES = 5
 PAGE_SIZE = 100
 BRIEF_PAGE_SIZE = 250
+CHATBOT_CREATED_BY_OPTION_ID = "6366"
 
 BRIEF_FIELDS: dict[str, str] = {
     "Created Date": "173",
@@ -25,6 +26,13 @@ JOB_FIELDS: dict[str, str] = {
 }
 
 MONITORED_MODULES: tuple[ModuleMonitor, ...] = (
-    ModuleMonitor("brief", 3, "Last Modified Date", BRIEF_FIELDS, select_all_fields=True),
+    ModuleMonitor(
+        "brief",
+        3,
+        "Last Modified Date",
+        BRIEF_FIELDS,
+        select_all_fields=True,
+        filter_condition=f"FD_4747 = {CHATBOT_CREATED_BY_OPTION_ID}",
+    ),
     ModuleMonitor("job", 14, "Last Modified Date", JOB_FIELDS),
 )
