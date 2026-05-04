@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,21 @@ from utils.monitoring import get_field_value
 
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "briefs.sqlite3"
+
+
+def _get_option_value(option: dict[str, Any]) -> str | None:
+    return next(
+        (option[key] for key in ("value", "text", "name", "label") if key in option),
+        None,
+    )
+
+
+def _get_field_values(item: dict[str, Any], field_name: str) -> list[str]:
+    field = next(field for field in item["fields"] if field["name"] == field_name)
+    options = field["options"]
+    if not options:
+        return []
+    return [value for option in options if (value := _get_option_value(option))]
 
 
 def _create_table(connection: sqlite3.Connection) -> None:
@@ -75,7 +91,7 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
     last_modified_date = get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME)
     brief_description = get_field_value(item, "Brief Description")
     brief_sla = get_field_value(item, "Brief SLA")
-    work_type = get_field_value(item, "Work Type")
+    work_type = json.dumps(_get_field_values(item, "Work Type"), ensure_ascii=False)
     client_review_deadline = get_field_value(item, "Client Review Deadline")
     delivery_deadline = get_field_value(item, "Delivery Deadline")
     budget = get_field_value(item, "Budget")
