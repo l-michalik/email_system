@@ -48,5 +48,5 @@ def load_settings() -> AppSettings:
         smtp_port=int(_get_env_var("SMTP_PORT")),
         smtp_username=_get_env_var("SMTP_USERNAME"),
         smtp_password=_get_env_var("SMTP_PASSWORD"),
-        smtp_from=getenv("SMTP_FROM"),
+        smtp_from=_get_env_var("SMTP_FROM"),
     )

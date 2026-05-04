@@ -8,7 +8,8 @@ from typing import Any
 class ModuleMonitor:
     label: str
     module_id: int
-    last_modified_field_id: str
+    query_field_name: str
+    fields: dict[str, str]
 
 
 @dataclass(frozen=True)
