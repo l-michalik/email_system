@@ -1,6 +1,7 @@
 # Email System
 
 `main.py` runs the monitoring pass immediately and logs module summaries plus the fetched items to stdout.
+Chatbot-created briefs are also stored locally in `data/briefs.sqlite3`.
 
 Run it once:
 
