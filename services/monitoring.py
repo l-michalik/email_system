@@ -21,7 +21,12 @@ from schemas.monitoring import MonitoringResult
 from utils import get_token
 from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
 from utils.mailer import send_email
-from utils.brief_storage import store_chatbot_brief
+from utils.brief_storage import (
+    brief_exists,
+    is_create_email_sent,
+    mark_create_email_sent,
+    store_chatbot_brief,
+)
 from utils.monitoring import (
     build_query,
     cutoff_timestamp,
@@ -146,9 +151,13 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
                         != BRIEF_CREATED_BY_CHATBOT_VALUE
                     ):
                         continue
-                    store_chatbot_brief(item)
                     brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+                    if is_create_email_sent(brief_id):
+                        continue
+                    if not brief_exists(brief_id):
+                        store_chatbot_brief(item)
                     send_brief_creation_email(brief_id)
+                    mark_create_email_sent(brief_id)
                     created_at = parse_brief_created_date(
                         get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
                     )

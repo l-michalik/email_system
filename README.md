@@ -20,3 +20,9 @@ Send a test email
 ```bash
 uv run python send_email.py
 ```
+
+
+  Status                                           316 `FD_316`
+{'options': [{'id': 0, 'value': ''}], 'fieldDefinitionId': 4406, 'name': 'Link to Output Files (Client)'}
+'fieldDefinitionId': 229, 'name': 'Assets'
+{'options': [{'id': 0, 'value': '14994'}], 'fieldDefinitionId': 4660, 'name': 'Brief Number'}

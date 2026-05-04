@@ -32,7 +32,8 @@ def _create_table(connection: sqlite3.Connection) -> None:
             "Budget" TEXT,
             "Brief Document" TEXT,
             "Supporting Documents" TEXT,
-            "Media Plans" TEXT
+            "Media Plans" TEXT,
+            "IsCreateEmailSent" INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -82,9 +83,10 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
                 "Budget",
                 "Brief Document",
                 "Supporting Documents",
-                "Media Plans"
+                "Media Plans",
+                "IsCreateEmailSent"
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 brief_number,
@@ -100,6 +102,29 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
                 brief_document,
                 supporting_documents,
                 media_plans,
+                0,
             ),
+        )
+        connection.commit()
+
+
+def is_create_email_sent(brief_number: str) -> bool:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _create_table(connection)
+        row = connection.execute(
+            'SELECT "IsCreateEmailSent" FROM chatbot_briefs WHERE brief_number = ? LIMIT 1',
+            (brief_number,),
+        ).fetchone()
+    return bool(row and row[0])
+
+
+def mark_create_email_sent(brief_number: str) -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _create_table(connection)
+        connection.execute(
+            'UPDATE chatbot_briefs SET "IsCreateEmailSent" = 1 WHERE brief_number = ?',
+            (brief_number,),
         )
         connection.commit()
