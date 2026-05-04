@@ -14,10 +14,15 @@ BRIEF_FIELDS: dict[str, str] = {
 }
 
 JOB_FIELDS: dict[str, str] = {
+    "Job Number": "471",
+    "Brief Number": "1291",
     "Last Modified Date": "1285",
+    "Status": "316",
+    "Assets": "229",
+    "Link to Output Files (Client)": "4406",
 }
 
 MONITORED_MODULES: tuple[ModuleMonitor, ...] = (
-    ModuleMonitor("brief", 3, "Last Modified Date", BRIEF_FIELDS),
+    ModuleMonitor("brief", 3, "Last Modified Date", BRIEF_FIELDS, select_all_fields=True),
     ModuleMonitor("job", 14, "Last Modified Date", JOB_FIELDS),
 )

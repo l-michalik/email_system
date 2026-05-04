@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import requests
+from config.constants import POLL_WINDOW_MINUTES
 
-from config.constants import PAGE_SIZE, POLL_WINDOW_MINUTES
+logger = logging.getLogger(__name__)
 
 
 def _crm_field(field_id: str) -> str:
@@ -14,7 +15,8 @@ def _crm_field(field_id: str) -> str:
 
 def cutoff_timestamp() -> str:
     cutoff = datetime.now(UTC) - timedelta(minutes=POLL_WINDOW_MINUTES)
-    return cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
+    timestamp = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return timestamp
 
 
 def build_query(
@@ -22,58 +24,16 @@ def build_query(
     query_field_name: str,
     fields: dict[str, str],
     cutoff: str,
+    select_all_fields: bool = False,
 ) -> str:
-    selected_fields = ", ".join(_crm_field(field_id) for field_id in fields.values())
-    return (
+    selected_fields = "*"
+    if not select_all_fields:
+        selected_fields = ", ".join(_crm_field(field_id) for field_id in fields.values())
+    query = (
         f"SELECT {selected_fields} FROM MODULE_{module_id} "
         f"WHERE {_crm_field(fields[query_field_name])} > '{cutoff}'"
     )
-
-
-def fetch_page(
-    session: requests.Session,
-    url: str,
-    token: str,
-    query: str,
-    start: int,
-    page_size: int = PAGE_SIZE,
-) -> list[dict[str, Any]]:
-    response = session.post(
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        data=query,
-        params={
-            "returnAllFields": False,
-            "limit": page_size,
-            "start": start,
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()["result"]
-
-
-def fetch_all_pages(
-    session: requests.Session,
-    url: str,
-    token: str,
-    query: str,
-    page_size: int = PAGE_SIZE,
-) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    start = 1
-
-    while True:
-        page = fetch_page(session, url, token, query, start, page_size)
-        items.extend(page)
-        if len(page) < page_size:
-            break
-        start += page_size
-
-    return items
+    return query
 
 
 def get_field_value(item: dict[str, Any], field_name: str) -> str | None:

@@ -1,4 +1,4 @@
-from services.monitoring import (
+from services.email_notifications import (
     send_brief_creation_email,
     send_change_request_updated_email,
     send_work_review_request_email,

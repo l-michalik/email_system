@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,8 @@ from utils.monitoring import get_field_value
 
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "briefs.sqlite3"
+logger = logging.getLogger(__name__)
+_is_table_created = False
 BRIEF_DESCRIPTION_FIELD_NAME = "Brief Description"
 BRIEF_SLA_FIELD_NAME = "Brief SLA"
 WORK_TYPE_FIELD_NAME = "Work Type"
@@ -79,7 +82,7 @@ def _parse_decimal(value: str | None) -> Decimal | None:
 def _load_brief_row(brief_number: str) -> dict[str, Any] | None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         row = connection.execute(
             """
             SELECT
@@ -145,6 +148,7 @@ def _brief_values_from_item(item: dict[str, Any]) -> tuple[Any, ...]:
 def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) -> bool:
     current_brief_description = get_field_value(current_item, "Brief Description")
     if previous["Brief Description"] != current_brief_description:
+        logger.info("Brief %s update detected: description changed", previous["brief_number"])
         return True
 
     current_brief_sla = get_field_value(current_item, "Brief SLA")
@@ -152,10 +156,12 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         (previous["Brief SLA"] or "").strip().lower() == "standard sla"
         and (current_brief_sla or "").strip().lower() == "rush sla"
     ):
+        logger.info("Brief %s update detected: SLA changed to rush", previous["brief_number"])
         return True
 
     current_work_type = _get_field_values(current_item, WORK_TYPE_FIELD_NAME)
     if set(previous[WORK_TYPE_FIELD_NAME]) != set(current_work_type):
+        logger.info("Brief %s update detected: work type changed", previous["brief_number"])
         return True
 
     previous_client_review_deadline = _parse_date(previous["Client Review Deadline"])
@@ -167,6 +173,10 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         and current_client_review_deadline
         and current_client_review_deadline < previous_client_review_deadline
     ):
+        logger.info(
+            "Brief %s update detected: client review deadline moved earlier",
+            previous["brief_number"],
+        )
         return True
 
     previous_delivery_deadline = _parse_date(previous["Delivery Deadline"])
@@ -178,11 +188,20 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         and current_delivery_deadline
         and current_delivery_deadline < previous_delivery_deadline
     ):
+        logger.info(
+            "Brief %s update detected: delivery deadline moved earlier",
+            previous["brief_number"],
+        )
         return True
 
     previous_budget = _parse_decimal(previous["Budget"])
     current_budget = _parse_decimal(get_field_value(current_item, "Budget"))
-    if previous_budget is not None and current_budget is not None and current_budget < previous_budget:
+    if (
+        previous_budget is not None
+        and current_budget is not None
+        and current_budget < previous_budget
+    ):
+        logger.info("Brief %s update detected: budget decreased", previous["brief_number"])
         return True
 
     for field_name in (
@@ -193,12 +212,19 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
         previous_files = set(previous[field_name])
         current_files = set(_get_field_values(current_item, field_name))
         if previous_files - current_files:
+            logger.info(
+                "Brief %s update detected: files removed from %s",
+                previous["brief_number"],
+                field_name,
+            )
             return True
 
+    logger.info("Brief %s has no notification-worthy update", previous["brief_number"])
     return False
 
 
 def _create_table(connection: sqlite3.Connection) -> None:
+    logger.info("Ensuring chatbot storage schema exists at %s", DB_PATH)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS chatbot_briefs (
@@ -233,23 +259,36 @@ def _create_table(connection: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_table_created(connection: sqlite3.Connection) -> None:
+    global _is_table_created
+
+    if _is_table_created:
+        return
+
+    _create_table(connection)
+    _is_table_created = True
+
+
 def brief_exists(brief_number: str) -> bool:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         row = connection.execute(
             "SELECT 1 FROM chatbot_briefs WHERE brief_number = ? LIMIT 1",
             (brief_number,),
         ).fetchone()
-    return row is not None
+    exists = row is not None
+    logger.info("Brief %s exists in storage: %s", brief_number, exists)
+    return exists
 
 
 def store_chatbot_brief(item: dict[str, Any]) -> None:
     brief_values = _brief_values_from_item(item)
+    logger.info("Storing chatbot brief %s", brief_values[0])
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         connection.execute(
             """
             INSERT INTO chatbot_briefs (
@@ -273,27 +312,33 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
             brief_values + (0,),
         )
         connection.commit()
+    logger.info("Stored chatbot brief %s", brief_values[0])
 
 
 def get_chatbot_brief(brief_number: str) -> dict[str, Any] | None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return _load_brief_row(brief_number)
+    row = _load_brief_row(brief_number)
+    logger.info("Loaded chatbot brief %s: %s", brief_number, row is not None)
+    return row
 
 
 def update_chatbot_brief(item: dict[str, Any]) -> None:
     brief_number = get_field_value(item, "Brief Number")
     if not brief_number:
+        logger.info("Skipping brief update because Brief Number is missing")
         return
 
     existing_brief = _load_brief_row(brief_number)
     if existing_brief is None:
+        logger.info("Skipping brief update because brief %s is not stored", brief_number)
         return
 
     brief_values = _brief_values_from_item(item)
+    logger.info("Updating chatbot brief %s", brief_number)
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         connection.execute(
             """
             UPDATE chatbot_briefs
@@ -320,15 +365,21 @@ def update_chatbot_brief(item: dict[str, Any]) -> None:
             ),
         )
         connection.commit()
+    logger.info("Updated chatbot brief %s", brief_number)
 
 
 def should_send_change_request_updated_email(item: dict[str, Any]) -> bool:
     brief_number = get_field_value(item, "Brief Number")
     if not brief_number:
+        logger.info("Skipping change request update check because Brief Number is missing")
         return False
 
     previous_brief = _load_brief_row(brief_number)
     if previous_brief is None:
+        logger.info(
+            "Skipping change request update check because brief %s is not stored",
+            brief_number,
+        )
         return False
 
     return _should_send_update(previous_brief, item)
@@ -337,12 +388,14 @@ def should_send_change_request_updated_email(item: dict[str, Any]) -> bool:
 def job_exists(job_number: str) -> bool:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         row = connection.execute(
             "SELECT 1 FROM chatbot_jobs WHERE job_number = ? LIMIT 1",
             (job_number,),
         ).fetchone()
-    return row is not None
+    exists = row is not None
+    logger.info("Job %s exists in storage: %s", job_number, exists)
+    return exists
 
 
 def store_chatbot_job(item: dict[str, Any]) -> None:
@@ -352,10 +405,11 @@ def store_chatbot_job(item: dict[str, Any]) -> None:
     status = get_field_value(item, "Status")
     assets = get_field_value(item, "Assets")
     output_files_link = get_field_value(item, "Link to Output Files (Client)")
+    logger.info("Storing chatbot job %s for brief %s", job_number, brief_number)
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         connection.execute(
             """
             INSERT INTO chatbot_jobs (
@@ -378,25 +432,30 @@ def store_chatbot_job(item: dict[str, Any]) -> None:
             ),
         )
         connection.commit()
+    logger.info("Stored chatbot job %s", job_number)
 
 
 def is_create_email_sent(brief_number: str) -> bool:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         row = connection.execute(
             'SELECT "IsCreateEmailSent" FROM chatbot_briefs WHERE brief_number = ? LIMIT 1',
             (brief_number,),
         ).fetchone()
-    return bool(row and row[0])
+    sent = bool(row and row[0])
+    logger.info("Create email sent for brief %s: %s", brief_number, sent)
+    return sent
 
 
 def mark_create_email_sent(brief_number: str) -> None:
+    logger.info("Marking create email sent for brief %s", brief_number)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        _create_table(connection)
+        _ensure_table_created(connection)
         connection.execute(
             'UPDATE chatbot_briefs SET "IsCreateEmailSent" = 1 WHERE brief_number = ?',
             (brief_number,),
         )
         connection.commit()
+    logger.info("Marked create email sent for brief %s", brief_number)

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+import logging
 from email.message import EmailMessage
 
 from config.settings import load_settings
 
 
 DEFAULT_RECIPIENT = "l.michalik004@gmail.com"
+logger = logging.getLogger(__name__)
 
 
 def build_message(
@@ -36,11 +38,19 @@ def send_email(
     settings = load_settings()
     message = build_message(settings.smtp_from, recipient, subject, body, html_body)
     context = ssl.create_default_context()
+    logger.info(
+        "Connecting to SMTP host=%s port=%s recipient=%s subject=%s",
+        settings.smtp_host,
+        settings.smtp_port,
+        recipient,
+        subject,
+    )
 
     if settings.smtp_port == 465:
         with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=context) as client:
             client.login(settings.smtp_username, settings.smtp_password)
             client.send_message(message)
+        logger.info("SMTP email sent over SSL to %s", recipient)
         return
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as client:
@@ -49,6 +59,7 @@ def send_email(
         client.ehlo()
         client.login(settings.smtp_username, settings.smtp_password)
         client.send_message(message)
+    logger.info("SMTP email sent over STARTTLS to %s", recipient)
 
 
 def send_test_email() -> None:

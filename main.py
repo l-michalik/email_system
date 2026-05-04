@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 
 from config.settings import load_settings

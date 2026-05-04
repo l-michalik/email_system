@@ -1,7 +1,15 @@
 # Email System
 
-`main.py` runs the monitoring pass immediately and logs module summaries plus the fetched items to stdout.
-Chatbot-created briefs are also stored locally in `data/briefs.sqlite3`.
+`main.py` runs one monitoring pass and logs each major step to stdout.
+Chatbot-created briefs are stored locally in `data/briefs.sqlite3`.
+
+## Structure
+
+- `clients/` contains external API clients.
+- `services/monitoring.py` coordinates one monitoring pass.
+- `services/email_notifications.py` contains notification rules and email dispatch.
+- `utils/brief_storage.py` owns local SQLite persistence.
+- `utils/monitoring.py` contains CRM query and field parsing helpers.
 
 Run it once:
 
