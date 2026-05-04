@@ -15,6 +15,11 @@ class AppSettings:
     crm_client_secret: str
     crm_username: str
     crm_password: str
+    smtp_host: str
+    smtp_port: int
+    smtp_username: str
+    smtp_password: str
+    smtp_from: str
 
     @property
     def search_url(self) -> str:
@@ -39,4 +44,9 @@ def load_settings() -> AppSettings:
         crm_client_secret=_get_env_var("CRM_CLIENT_SECRET"),
         crm_username=_get_env_var("CRM_USERNAME"),
         crm_password=_get_env_var("CRM_PASSWORD"),
+        smtp_host=_get_env_var("SMTP_HOST"),
+        smtp_port=int(_get_env_var("SMTP_PORT")),
+        smtp_username=_get_env_var("SMTP_USERNAME"),
+        smtp_password=_get_env_var("SMTP_PASSWORD"),
+        smtp_from=getenv("SMTP_FROM"),
     )
