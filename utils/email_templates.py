@@ -23,6 +23,9 @@ def build_email_text(content: EmailTemplateContent) -> str:
 
 
 def build_email_html(content: EmailTemplateContent) -> str:
+    subtitle = content.subtitle.replace("\n", "<br>")
+    body_text = content.body_text.replace("\n", "<br>")
+
     return f"""
 <div style="margin:0!important;padding:0!important;background-color:#f5f1ea">
   <div role="article" aria-label="Joule email" lang="en" style="background-color:#ffffff;color:#1f2933;font-family:'Open Sans',HelveticaNeue,Arial,Helvetica,sans-serif;font-size:18px;font-weight:400;line-height:28px;margin:0 auto;max-width:600px;padding:40px 24px">
@@ -34,12 +37,12 @@ def build_email_html(content: EmailTemplateContent) -> str:
         {content.title}
       </h1>
       <p style="color:#6b7280;font-size:18px;font-weight:600;line-height:28px;margin:0;text-align:center">
-        {content.subtitle}
+        {subtitle}
       </p>
     </header>
     <img src="https://joule.weareamnet.com/amnet/public/siteelements/Joule_inline_colur_filled.png" alt="" width="600" border="0" style="border-radius:4px;display:block;margin:32px 0;max-width:100%;min-width:100px;width:100%">
     <p style="margin:0 0 32px">
-      {content.body_text}
+      {body_text}
     </p>
     <center>
       <div style="margin:40px 0 0">

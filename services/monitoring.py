@@ -14,6 +14,7 @@ from config.constants import (
     CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
     MONITORED_MODULES,
     POLL_WINDOW_MINUTES,
+    WORK_REVIEW_REQUEST_EMAIL_SUBJECT,
 )
 from config.settings import AppSettings
 from schemas.monitoring import MonitoringResult
@@ -59,6 +60,28 @@ def create_brief_update_email(brief_id: str) -> EmailTemplateContent:
     )
 
 
+def create_work_review_request_email(
+    brief_number: str,
+    job_name: str,
+    job_number: str,
+) -> EmailTemplateContent:
+    return EmailTemplateContent(
+        subject=WORK_REVIEW_REQUEST_EMAIL_SUBJECT,
+        title="Your Asset is Ready for Review",
+        subtitle=(
+            f"Brief Number: {brief_number}\n"
+            f"Job Name: {job_name}\n"
+            f"Job Number: {job_number}"
+        ),
+        body_text=(
+            "To review the asset, please click the chatbot link below. You will have "
+            "the option to approve or reject it based on your requirements."
+        ),
+        button_label="Open Chatbot",
+        button_link="https://waa.mdbgo.io/",
+    )
+
+
 def build_email_template_content(condition: str, brief_id: str) -> EmailTemplateContent:
     if condition == "brief_created":
         return create_brief_creation_email(brief_id)
@@ -78,6 +101,19 @@ def send_brief_creation_email(brief_id: str) -> None:
 
 def send_change_request_updated_email(brief_id: str) -> None:
     content = create_brief_update_email(brief_id)
+    send_email(
+        content.subject,
+        build_email_text(content),
+        html_body=build_email_html(content),
+    )
+
+
+def send_work_review_request_email(
+    brief_number: str,
+    job_name: str,
+    job_number: str,
+) -> None:
+    content = create_work_review_request_email(brief_number, job_name, job_number)
     send_email(
         content.subject,
         build_email_text(content),
