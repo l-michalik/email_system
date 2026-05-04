@@ -14,10 +14,12 @@ BRIEF_LAST_MODIFIED_DATE_FIELD_NAME = "Last Modified Date"
 BRIEF_NUMBER_FIELD_NAME = "Brief Number"
 JOB_NUMBER_FIELD_NAME = "Job Number"
 JOB_BRIEF_NUMBER_FIELD_NAME = "Brief Number"
+JOB_NAME_FIELD_NAME = "Job Name"
 JOB_STATUS_FIELD_NAME = "Status"
 JOB_ASSETS_FIELD_NAME = "Assets"
 JOB_OUTPUT_FILES_LINK_FIELD_NAME = "Link to Output Files (Client)"
 JOB_LAST_MODIFIED_DATE_FIELD_NAME = "Last Modified Date"
+JOB_STATUS_CLIENT_REVIEW_VALUE = "2828"
 
 BRIEF_FIELDS: dict[str, str] = {
     "created_date": "fd_173",

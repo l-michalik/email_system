@@ -80,7 +80,8 @@ def get_field_value(item: dict[str, Any], field_name: str) -> str | None:
     options = field["options"]
     if not options:
         return None
-    option = options[0]
+    # The API returns option history in order; the current value is the last entry.
+    option = options[-1]
     return next(
         (option[key] for key in ("value", "text", "name", "label") if key in option),
         None,
@@ -88,4 +89,17 @@ def get_field_value(item: dict[str, Any], field_name: str) -> str | None:
 
 
 def parse_brief_last_modified_date(value: str) -> datetime:
-    return datetime.strptime(value, "%m/%d/%Y, %H:%M")
+    candidates: list[datetime] = []
+    for format_string in ("%m/%d/%Y, %H:%M", "%d/%m/%Y, %H:%M"):
+        try:
+            candidates.append(datetime.strptime(value, format_string))
+        except ValueError:
+            continue
+
+    if not candidates:
+        raise ValueError(f"Unsupported date format: {value}")
+    if len(candidates) == 1:
+        return candidates[0]
+
+    now = datetime.now()
+    return min(candidates, key=lambda candidate: abs(candidate - now))

@@ -7,11 +7,19 @@ from typing import Any
 import requests
 
 from config.constants import (
+    CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
     BRIEF_CREATED_DATE_FIELD_NAME,
     BRIEF_EMAIL_SUBJECT,
     BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
     BRIEF_NUMBER_FIELD_NAME,
-    CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
+    JOB_ASSETS_FIELD_NAME,
+    JOB_BRIEF_NUMBER_FIELD_NAME,
+    JOB_LAST_MODIFIED_DATE_FIELD_NAME,
+    JOB_NAME_FIELD_NAME,
+    JOB_NUMBER_FIELD_NAME,
+    JOB_OUTPUT_FILES_LINK_FIELD_NAME,
+    JOB_STATUS_CLIENT_REVIEW_VALUE,
+    JOB_STATUS_FIELD_NAME,
     MONITORED_MODULES,
     POLL_WINDOW_MINUTES,
     WORK_REVIEW_REQUEST_EMAIL_SUBJECT,
@@ -26,7 +34,6 @@ from utils.brief_storage import (
     update_chatbot_brief,
 )
 from utils.monitoring import (
-    build_query,
     cutoff_timestamp,
     fetch_all_pages,
     get_field_value,
@@ -125,6 +132,75 @@ def send_work_review_request_email(
     )
 
 
+def _job_has_review_assets(item: dict[str, Any]) -> bool:
+    return bool(
+        get_field_value(item, JOB_ASSETS_FIELD_NAME)
+        or get_field_value(item, JOB_OUTPUT_FILES_LINK_FIELD_NAME)
+    )
+
+
+def _normalize_status(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def should_send_work_review_request_email(
+    item: dict[str, Any],
+    window_start: datetime,
+) -> bool:
+    job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
+    brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
+    last_modified_date = get_field_value(item, JOB_LAST_MODIFIED_DATE_FIELD_NAME)
+    status = get_field_value(item, JOB_STATUS_FIELD_NAME)
+    if not last_modified_date or not status:
+        logging.info(
+            "Skipping work review email for job %s: missing last modified date or status (raw last modified=%s, status=%s)",
+            job_number or "<unknown>",
+            last_modified_date or "<missing>",
+            status or "<missing>",
+        )
+        return False
+
+    modified_at = parse_brief_last_modified_date(last_modified_date)
+    if modified_at < window_start:
+        logging.info(
+            "Skipping work review email for job %s: last modified raw=%s parsed=%s is outside the poll window starting %s",
+            job_number or "<unknown>",
+            last_modified_date,
+            modified_at.strftime("%Y-%m-%d %H:%M"),
+            window_start.strftime("%Y-%m-%d %H:%M"),
+        )
+        return False
+
+    normalized_status = _normalize_status(status)
+    if normalized_status not in {
+        JOB_STATUS_CLIENT_REVIEW_VALUE,
+        "client review",
+    }:
+        logging.info(
+            "Skipping work review email for job %s: status raw=%s, expected CLIENT REVIEW",
+            job_number or "<unknown>",
+            status,
+        )
+        return False
+
+    if not _job_has_review_assets(item):
+        logging.info(
+            "Skipping work review email for job %s: no assets or output files link found",
+            job_number or "<unknown>",
+        )
+        return False
+
+    logging.info(
+        "Work review email is eligible for job %s (brief %s, status raw=%s, modified raw=%s parsed=%s)",
+        job_number or "<unknown>",
+        brief_number or "<unknown>",
+        status,
+        last_modified_date,
+        modified_at.strftime("%Y-%m-%d %H:%M"),
+    )
+    return True
+
+
 def _log_fetch_window(label: str) -> tuple[datetime, datetime]:
     window_end = datetime.now()
     window_start = window_end - timedelta(minutes=POLL_WINDOW_MINUTES)
@@ -165,7 +241,7 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
         token = get_token()
 
         results: list[MonitoringResult] = []
-        brief_window_start, brief_window_end = _log_fetch_window("briefs")
+        _log_fetch_window("briefs")
         brief_query = (
             f"SELECT * FROM MODULE_{brief_monitor.module_id} "
             f"WHERE {brief_monitor.fields[brief_monitor.query_field_name]} > '{cutoff}'"
@@ -174,14 +250,35 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
         _process_recent_briefs(brief_items)
         results.append(MonitoringResult(monitor=brief_monitor, items=brief_items))
 
-        _log_fetch_window("jobs")
-        job_query = build_query(
-            job_monitor.module_id,
-            job_monitor.query_field_name,
-            job_monitor.fields,
-            cutoff,
+        job_window_start, _ = _log_fetch_window("jobs")
+        job_query = (
+            f"SELECT * FROM MODULE_{job_monitor.module_id} "
+            f"WHERE {job_monitor.fields[job_monitor.query_field_name]} > '{cutoff}'"
         )
         job_items = fetch_all_pages(session, settings.search_url, token, job_query)
+        for item in job_items:
+            if not should_send_work_review_request_email(item, job_window_start):
+                continue
+
+            brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
+            job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
+            job_name = get_field_value(item, JOB_NAME_FIELD_NAME) or job_number
+            if not brief_number or not job_number or not job_name:
+                logging.info(
+                    "Skipping work review email because required job fields are missing: brief=%s, job=%s, name=%s",
+                    brief_number or "<unknown>",
+                    job_number or "<unknown>",
+                    job_name or "<unknown>",
+                )
+                continue
+
+            logging.info(
+                "Sending work review email for job %s (brief %s, name %s)",
+                job_number,
+                brief_number,
+                job_name,
+            )
+            send_work_review_request_email(brief_number, job_name, job_number)
         results.append(MonitoringResult(monitor=job_monitor, items=job_items))
 
         return results
