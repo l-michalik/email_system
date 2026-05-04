@@ -6,6 +6,7 @@ POLL_WINDOW_MINUTES = 5
 PAGE_SIZE = 100
 BRIEF_CREATED_BY_CHATBOT_VALUE = "Yes"
 BRIEF_EMAIL_SUBJECT = "Your Brief Has Been Created – Please Save the Brief ID"
+CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT = "Your change request has been successfully updated"
 BRIEF_CREATED_DATE_FIELD_NAME = "Created Date"
 BRIEF_CREATED_BY_CHATBOT_FIELD_NAME = "Created By ChatBot"
 BRIEF_NUMBER_FIELD_NAME = "Brief Number"
