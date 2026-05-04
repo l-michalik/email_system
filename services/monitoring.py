@@ -67,9 +67,8 @@ def build_email_template_content(condition: str, brief_id: str) -> EmailTemplate
     raise ValueError(f"Unsupported email condition: {condition}")
 
 
-def send_brief_creation_email(item: dict[str, Any]) -> None:
-    brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
-    content = create_brief_creation_email(brief_number)
+def send_brief_creation_email(brief_id: str) -> None:
+    content = create_brief_creation_email(brief_id)
     send_email(
         content.subject,
         build_email_text(content),
@@ -110,7 +109,8 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
                         != BRIEF_CREATED_BY_CHATBOT_VALUE
                     ):
                         continue
-                    send_brief_creation_email(item)
+                    brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+                    send_brief_creation_email(brief_id)
                     created_at = parse_brief_created_date(
                         get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
                     )
