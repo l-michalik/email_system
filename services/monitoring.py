@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import requests
 
@@ -8,20 +9,81 @@ from config.constants import (
     BRIEF_CREATED_BY_CHATBOT_FIELD_NAME,
     BRIEF_CREATED_BY_CHATBOT_VALUE,
     BRIEF_CREATED_DATE_FIELD_NAME,
+    BRIEF_EMAIL_SUBJECT,
+    BRIEF_NUMBER_FIELD_NAME,
+    CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
     MONITORED_MODULES,
     POLL_WINDOW_MINUTES,
 )
 from config.settings import AppSettings
 from schemas.monitoring import MonitoringResult
 from utils import get_token
+from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
+from utils.mailer import send_email
 from utils.monitoring import (
     build_query,
     cutoff_timestamp,
     fetch_all_pages,
     get_field_value,
     parse_brief_created_date,
-    send_brief_creation_email,
 )
+
+
+def create_brief_creation_email(brief_number: str) -> EmailTemplateContent:
+    return EmailTemplateContent(
+        subject=BRIEF_EMAIL_SUBJECT,
+        title="Brief has been created successfully",
+        subtitle=f"Brief Number: {brief_number}",
+        body_text=(
+            "Please make a note of this Brief ID. If you would like to update or "
+            "modify this brief in the future, simply return to the chatbot by "
+            "clicking Open Chatbot and reference your Brief ID."
+        ),
+        button_label="Open Chatbot",
+        button_link="https://waa.mdbgo.io/",
+    )
+
+
+def create_brief_update_email(brief_id: str) -> EmailTemplateContent:
+    return EmailTemplateContent(
+        subject=CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
+        title="Your change request has been successfully updated",
+        subtitle=f"Brief ID: {brief_id}",
+        body_text=(
+            "We are pleased to inform you that your requested change has been "
+            "successfully updated in Joule. To view your updated brief, simply "
+            "click on Open Chatbot below and reference your Brief ID."
+        ),
+        button_label="Open Chatbot",
+        button_link="https://waa.mdbgo.io/",
+    )
+
+
+def build_email_template_content(condition: str, brief_id: str) -> EmailTemplateContent:
+    if condition == "brief_created":
+        return create_brief_creation_email(brief_id)
+    if condition == "change_request_updated":
+        return create_brief_update_email(brief_id)
+    raise ValueError(f"Unsupported email condition: {condition}")
+
+
+def send_brief_creation_email(item: dict[str, Any]) -> None:
+    brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+    content = create_brief_creation_email(brief_number)
+    send_email(
+        content.subject,
+        build_email_text(content),
+        html_body=build_email_html(content),
+    )
+
+
+def send_change_request_updated_email(brief_id: str) -> None:
+    content = create_brief_update_email(brief_id)
+    send_email(
+        content.subject,
+        build_email_text(content),
+        html_body=build_email_html(content),
+    )
 
 
 def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:

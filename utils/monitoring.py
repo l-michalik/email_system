@@ -5,19 +5,7 @@ from typing import Any
 
 import requests
 
-from config.constants import (
-    BRIEF_EMAIL_SUBJECT,
-    BRIEF_NUMBER_FIELD_NAME,
-    CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
-    PAGE_SIZE,
-    POLL_WINDOW_MINUTES,
-)
-from utils.mailer import send_email
-from utils.email_templates import (
-    EmailTemplateContent,
-    build_email_html,
-    build_email_text,
-)
+from config.constants import PAGE_SIZE, POLL_WINDOW_MINUTES
 
 
 def cutoff_timestamp() -> str:
@@ -90,68 +78,3 @@ def get_field_value(item: dict[str, Any], field_name: str) -> str:
 
 def parse_brief_created_date(value: str) -> datetime:
     return datetime.strptime(value, "%m/%d/%Y, %H:%M")
-
-
-def _build_brief_creation_email_content(brief_number: str) -> EmailTemplateContent:
-    return EmailTemplateContent(
-        subject=BRIEF_EMAIL_SUBJECT,
-        title="Brief has been created successfully",
-        subtitle=f"Brief Number: {brief_number}",
-        body_text=(
-            "Please make a note of this Brief ID. If you would like to update or "
-            "modify this brief in the future, simply return to the chatbot by "
-            "clicking Open Chatbot and reference your Brief ID."
-        ),
-        button_label="Open Chatbot",
-        button_link="https://waa.mdbgo.io/",
-    )
-
-
-def build_brief_creation_email_text(brief_number: str) -> str:
-    content = _build_brief_creation_email_content(brief_number)
-    return build_email_text(content)
-
-
-def build_brief_creation_email_html(brief_number: str) -> str:
-    content = _build_brief_creation_email_content(brief_number)
-    return build_email_html(content)
-
-
-def _build_change_request_updated_email_content(brief_id: str) -> EmailTemplateContent:
-    return EmailTemplateContent(
-        subject=CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
-        title="Your change request has been successfully updated",
-        subtitle=f"Brief ID: {brief_id}",
-        body_text=(
-            "We are pleased to inform you that your requested change has been "
-            "successfully updated in Joule. To view your updated brief, simply "
-            "click on Open Chatbot below and reference your Brief ID."
-        ),
-        button_label="Open Chatbot",
-        button_link="https://waa.mdbgo.io/",
-    )
-
-
-def build_change_request_updated_email_text(brief_id: str) -> str:
-    content = _build_change_request_updated_email_content(brief_id)
-    return build_email_text(content)
-
-
-def build_change_request_updated_email_html(brief_id: str) -> str:
-    content = _build_change_request_updated_email_content(brief_id)
-    return build_email_html(content)
-
-
-def build_email_template_content(condition: str, brief_id: str) -> EmailTemplateContent:
-    if condition == "brief_created":
-        return _build_brief_creation_email_content(brief_id)
-    if condition == "change_request_updated":
-        return _build_change_request_updated_email_content(brief_id)
-    raise ValueError(f"Unsupported email condition: {condition}")
-
-
-def send_brief_creation_email(item: dict[str, Any]) -> None:
-    brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
-    body = build_brief_creation_email_text(brief_number)
-    html_body = build_brief_creation_email_html(brief_number)
-    send_email(BRIEF_EMAIL_SUBJECT, body, html_body=html_body)
