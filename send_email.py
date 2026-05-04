@@ -13,7 +13,7 @@ def main() -> None:
     # send_brief_creation_email(brief_id)
     # send_change_request_updated_email(brief_id)
     # send_work_review_request_email(brief_number, job_name, job_number)
-    print("Email sent to l.michalik004@gmail.com")
+    print("Email helpers are ready. Set DEFAULT_RECIPIENT to send test messages directly.")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ class AppSettings:
     smtp_username: str
     smtp_password: str
     smtp_from: str
+    default_recipient: str | None
 
     @property
     def search_url(self) -> str:
@@ -37,6 +38,13 @@ def _get_env_var(key: str) -> str:
     return value
 
 
+def _get_optional_env_var(key: str) -> str | None:
+    value = getenv(key)
+    if not value:
+        return None
+    return value
+
+
 def load_settings() -> AppSettings:
     return AppSettings(
         crm_base_url=_get_env_var("CRM_BASE_URL"),
@@ -49,4 +57,5 @@ def load_settings() -> AppSettings:
         smtp_username=_get_env_var("SMTP_USERNAME"),
         smtp_password=_get_env_var("SMTP_PASSWORD"),
         smtp_from=_get_env_var("SMTP_FROM"),
+        default_recipient=_get_optional_env_var("DEFAULT_RECIPIENT"),
     )

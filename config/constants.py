@@ -11,6 +11,7 @@ BRIEF_FIELDS: dict[str, str] = {
     "Created By ChatBot": "4747",
     "Last Modified Date": "3100",
     "Brief Number": "4660",
+    "Main Client Contact": "4713",
 }
 
 JOB_FIELDS: dict[str, str] = {
@@ -20,6 +21,7 @@ JOB_FIELDS: dict[str, str] = {
     "Status": "316",
     "Assets": "229",
     "Link to Output Files (Client)": "4406",
+    "Main Client Contact": "4472",
 }
 
 MONITORED_MODULES: tuple[ModuleMonitor, ...] = (

@@ -25,11 +25,11 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
         token = client.get_token()
 
         brief_items = _fetch_monitor_items(client, token, brief_monitor, cutoff)
-        process_recent_briefs(brief_items)
+        process_recent_briefs(settings, brief_items)
 
         job_window_start = _poll_window_start("jobs")
         job_items = _fetch_monitor_items(client, token, job_monitor, cutoff)
-        process_review_jobs(job_items, job_window_start)
+        process_review_jobs(settings, job_items, job_window_start)
 
     logger.info("Finished monitoring pass")
     return [

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from config.constants import POLL_WINDOW_MINUTES
 
 logger = logging.getLogger(__name__)
+EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 def _crm_field(field_id: str) -> str:
@@ -50,6 +52,23 @@ def get_field_value(item: dict[str, Any], field_name: str) -> str | None:
         (option[key] for key in ("value", "text", "name", "label") if key in option),
         None,
     )
+
+
+def get_field_email(item: dict[str, Any], field_name: str) -> str | None:
+    field = next((field for field in item["fields"] if field["name"] == field_name), None)
+    if field is None:
+        return None
+
+    for option in reversed(field["options"]):
+        for key in ("email", "value", "text", "name", "label"):
+            candidate = option.get(key)
+            if not isinstance(candidate, str):
+                continue
+            match = EMAIL_PATTERN.search(candidate)
+            if match:
+                return match.group(0)
+
+    return None
 
 
 def parse_brief_last_modified_date(value: str) -> datetime:

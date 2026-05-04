@@ -4,13 +4,14 @@ import logging
 from datetime import datetime
 
 from clients import CrmItem
+from config.settings import AppSettings
 from utils.brief_storage import (
     should_send_change_request_updated_email,
     update_chatbot_brief,
 )
 from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
 from utils.mailer import send_email
-from utils.monitoring import get_field_value, parse_brief_last_modified_date
+from utils.monitoring import get_field_email, get_field_value, parse_brief_last_modified_date
 
 logger = logging.getLogger(__name__)
 
@@ -70,40 +71,43 @@ def create_work_review_request_email(
     )
 
 
-def send_template_email(content: EmailTemplateContent) -> None:
-    logger.info("Sending email with subject=%s", content.subject)
+def send_template_email(content: EmailTemplateContent, recipient: str | None = None) -> None:
+    logger.info("Sending email with subject=%s recipient=%s", content.subject, recipient)
     send_email(
         content.subject,
         build_email_text(content),
+        recipient=recipient,
         html_body=build_email_html(content),
     )
-    logger.info("Email sent with subject=%s", content.subject)
+    logger.info("Email sent with subject=%s recipient=%s", content.subject, recipient)
 
 
-def send_brief_creation_email(brief_id: str) -> None:
-    send_template_email(create_brief_creation_email(brief_id))
+def send_brief_creation_email(brief_id: str, recipient: str | None = None) -> None:
+    send_template_email(create_brief_creation_email(brief_id), recipient=recipient)
 
 
-def send_change_request_updated_email(brief_id: str) -> None:
-    send_template_email(create_brief_update_email(brief_id))
+def send_change_request_updated_email(brief_id: str, recipient: str | None = None) -> None:
+    send_template_email(create_brief_update_email(brief_id), recipient=recipient)
 
 
 def send_work_review_request_email(
     brief_number: str,
     job_name: str,
     job_number: str,
+    recipient: str | None = None,
 ) -> None:
     content = create_work_review_request_email(brief_number, job_name, job_number)
-    send_template_email(content)
+    send_template_email(content, recipient=recipient)
 
 
-def process_recent_briefs(items: list[CrmItem]) -> None:
+def process_recent_briefs(settings: AppSettings, items: list[CrmItem]) -> None:
     logger.info("Processing %s recent briefs", len(items))
 
     for item in items:
         brief_number = get_field_value(item, "Brief Number")
         created_date = get_field_value(item, "Created Date")
         last_modified_date = get_field_value(item, "Last Modified Date")
+        recipient = _resolve_recipient(settings, item)
 
         if not brief_number or not created_date or not last_modified_date:
             logger.info(
@@ -120,16 +124,26 @@ def process_recent_briefs(items: list[CrmItem]) -> None:
 
         if modified_at == created_at:
             logger.info("Brief %s was created in this window", brief_number)
-            send_brief_creation_email(brief_number)
+            if recipient is None:
+                logger.info("Skipping brief %s creation email: missing recipient", brief_number)
+                continue
+            send_brief_creation_email(brief_number, recipient=recipient)
             continue
 
         if should_send_change_request_updated_email(item):
             logger.info("Brief %s has a change request update", brief_number)
-            send_change_request_updated_email(brief_number)
+            if recipient is None:
+                logger.info("Skipping brief %s update email: missing recipient", brief_number)
+                continue
+            send_change_request_updated_email(brief_number, recipient=recipient)
             update_chatbot_brief(item)
 
 
-def process_review_jobs(items: list[CrmItem], window_start: datetime) -> None:
+def process_review_jobs(
+    settings: AppSettings,
+    items: list[CrmItem],
+    window_start: datetime,
+) -> None:
     logger.info("Processing %s recent jobs", len(items))
 
     for item in items:
@@ -149,13 +163,24 @@ def process_review_jobs(items: list[CrmItem], window_start: datetime) -> None:
             )
             continue
 
+        recipient = _resolve_recipient(settings, item)
+        if recipient is None:
+            logger.info("Skipping work review email for job %s: missing recipient", job_number)
+            continue
+
         logger.info(
-            "Sending work review email for job %s (brief %s, name %s)",
+            "Sending work review email for job %s (brief %s, name %s) to %s",
             job_number,
             brief_number,
             job_name,
+            recipient,
         )
-        send_work_review_request_email(brief_number, job_name, job_number)
+        send_work_review_request_email(
+            brief_number,
+            job_name,
+            job_number,
+            recipient=recipient,
+        )
 
 
 def should_send_work_review_request_email(
@@ -211,3 +236,9 @@ def _job_has_review_assets(item: CrmItem) -> bool:
         get_field_value(item, "Assets")
         or get_field_value(item, "Link to Output Files (Client)")
     )
+
+
+def _resolve_recipient(settings: AppSettings, item: CrmItem) -> str | None:
+    if settings.default_recipient:
+        return settings.default_recipient
+    return get_field_email(item, "Main Client Contact")

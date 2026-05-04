@@ -8,7 +8,6 @@ from email.message import EmailMessage
 from config.settings import load_settings
 
 
-DEFAULT_RECIPIENT = "l.michalik004@gmail.com"
 logger = logging.getLogger(__name__)
 
 
@@ -32,17 +31,27 @@ def build_message(
 def send_email(
     subject: str,
     body: str,
-    recipient: str = DEFAULT_RECIPIENT,
+    recipient: str | None = None,
     html_body: str | None = None,
 ) -> None:
     settings = load_settings()
-    message = build_message(settings.smtp_from, recipient, subject, body, html_body)
+    resolved_recipient = recipient or settings.default_recipient
+    if resolved_recipient is None:
+        raise ValueError("Missing email recipient")
+
+    message = build_message(
+        settings.smtp_from,
+        resolved_recipient,
+        subject,
+        body,
+        html_body,
+    )
     context = ssl.create_default_context()
     logger.info(
         "Connecting to SMTP host=%s port=%s recipient=%s subject=%s",
         settings.smtp_host,
         settings.smtp_port,
-        recipient,
+        resolved_recipient,
         subject,
     )
 
@@ -50,7 +59,7 @@ def send_email(
         with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=context) as client:
             client.login(settings.smtp_username, settings.smtp_password)
             client.send_message(message)
-        logger.info("SMTP email sent over SSL to %s", recipient)
+        logger.info("SMTP email sent over SSL to %s", resolved_recipient)
         return
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as client:
@@ -59,7 +68,7 @@ def send_email(
         client.ehlo()
         client.login(settings.smtp_username, settings.smtp_password)
         client.send_message(message)
-    logger.info("SMTP email sent over STARTTLS to %s", recipient)
+    logger.info("SMTP email sent over STARTTLS to %s", resolved_recipient)
 
 
 def send_test_email() -> None:
