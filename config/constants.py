@@ -4,6 +4,7 @@ from schemas.monitoring import ModuleMonitor
 
 POLL_WINDOW_MINUTES = 5
 PAGE_SIZE = 100
+BRIEF_PAGE_SIZE = 250
 
 BRIEF_FIELDS: dict[str, str] = {
     "Created Date": "173",
