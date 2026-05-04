@@ -11,6 +11,7 @@ from config.constants import (
     BRIEF_NUMBER_FIELD_NAME,
     JOB_ASSETS_FIELD_NAME,
     JOB_BRIEF_NUMBER_FIELD_NAME,
+    JOB_LAST_MODIFIED_DATE_FIELD_NAME,
     JOB_NUMBER_FIELD_NAME,
     JOB_OUTPUT_FILES_LINK_FIELD_NAME,
     JOB_STATUS_FIELD_NAME,
@@ -47,6 +48,7 @@ def _create_table(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS chatbot_jobs (
             job_number TEXT PRIMARY KEY,
             brief_number TEXT NOT NULL,
+            last_modified_date TEXT,
             status TEXT,
             assets TEXT,
             output_files_link TEXT
@@ -138,6 +140,7 @@ def job_exists(job_number: str) -> bool:
 def store_chatbot_job(item: dict[str, Any]) -> None:
     job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
     brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
+    last_modified_date = get_field_value(item, JOB_LAST_MODIFIED_DATE_FIELD_NAME)
     status = get_field_value(item, JOB_STATUS_FIELD_NAME)
     assets = get_field_value(item, JOB_ASSETS_FIELD_NAME)
     output_files_link = get_field_value(item, JOB_OUTPUT_FILES_LINK_FIELD_NAME)
@@ -150,15 +153,17 @@ def store_chatbot_job(item: dict[str, Any]) -> None:
             INSERT INTO chatbot_jobs (
                 job_number,
                 brief_number,
+                last_modified_date,
                 status,
                 assets,
                 output_files_link
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 job_number,
                 brief_number,
+                last_modified_date,
                 status,
                 assets,
                 output_files_link,

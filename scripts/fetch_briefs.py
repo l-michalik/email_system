@@ -17,7 +17,7 @@ from utils.monitoring import fetch_all_pages, get_field_value
 
 
 PAGE_SIZE = 250
-JOB_QUERY = "SELECT FD_471, FD_1291, FD_316, FD_229, FD_4406 FROM MODULE_14"
+JOB_QUERY = "SELECT FD_471, FD_1291, FD_1285, FD_316, FD_229, FD_4406 FROM MODULE_14"
 
 
 def main() -> None:
