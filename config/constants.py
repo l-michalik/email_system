@@ -10,11 +10,13 @@ CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT = "Your change request has been successfull
 WORK_REVIEW_REQUEST_EMAIL_SUBJECT = "Action Required: Review Your Asset"
 BRIEF_CREATED_DATE_FIELD_NAME = "Created Date"
 BRIEF_CREATED_BY_CHATBOT_FIELD_NAME = "Created By ChatBot"
+BRIEF_LAST_MODIFIED_DATE_FIELD_NAME = "Last Modified Date"
 BRIEF_NUMBER_FIELD_NAME = "Brief Number"
 
 BRIEF_FIELDS: dict[str, str] = {
     "created_date": "fd_173",
     "created_by_chatbot": "fd_4747",
+    "last_modified_date": "fd_3100",
     "brief_number": "fd_4660",
 }
 

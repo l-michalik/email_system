@@ -32,6 +32,7 @@ def fetch_page(
     token: str,
     query: str,
     start: int,
+    page_size: int = PAGE_SIZE,
 ) -> list[dict[str, Any]]:
     response = session.post(
         url,
@@ -42,7 +43,7 @@ def fetch_page(
         data=query,
         params={
             "returnAllFields": False,
-            "limit": PAGE_SIZE,
+            "limit": page_size,
             "start": start,
         },
         timeout=30,
@@ -56,16 +57,17 @@ def fetch_all_pages(
     url: str,
     token: str,
     query: str,
+    page_size: int = PAGE_SIZE,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     start = 1
 
     while True:
-        page = fetch_page(session, url, token, query, start)
+        page = fetch_page(session, url, token, query, start, page_size)
         items.extend(page)
-        if len(page) < PAGE_SIZE:
+        if len(page) < page_size:
             break
-        start += PAGE_SIZE
+        start += page_size
 
     return items
 
@@ -73,7 +75,13 @@ def fetch_all_pages(
 def get_field_value(item: dict[str, Any], field_name: str) -> str:
     field = next(field for field in item["fields"] if field["name"] == field_name)
     options = field["options"]
-    return options[0]["value"] if options else ""
+    if not options:
+        return None
+    option = options[0]
+    return next(
+        (option[key] for key in ("value", "text", "name", "label") if key in option),
+        None,
+    )
 
 
 def parse_brief_created_date(value: str) -> datetime:
