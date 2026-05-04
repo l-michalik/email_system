@@ -9,6 +9,11 @@ from config.constants import (
     BRIEF_CREATED_DATE_FIELD_NAME,
     BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
     BRIEF_NUMBER_FIELD_NAME,
+    JOB_ASSETS_FIELD_NAME,
+    JOB_BRIEF_NUMBER_FIELD_NAME,
+    JOB_NUMBER_FIELD_NAME,
+    JOB_OUTPUT_FILES_LINK_FIELD_NAME,
+    JOB_STATUS_FIELD_NAME,
 )
 from utils.monitoring import get_field_value
 
@@ -34,6 +39,17 @@ def _create_table(connection: sqlite3.Connection) -> None:
             "Supporting Documents" TEXT,
             "Media Plans" TEXT,
             "IsCreateEmailSent" INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chatbot_jobs (
+            job_number TEXT PRIMARY KEY,
+            brief_number TEXT NOT NULL,
+            status TEXT,
+            assets TEXT,
+            output_files_link TEXT
         )
         """
     )
@@ -103,6 +119,49 @@ def store_chatbot_brief(item: dict[str, Any]) -> None:
                 supporting_documents,
                 media_plans,
                 0,
+            ),
+        )
+        connection.commit()
+
+
+def job_exists(job_number: str) -> bool:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _create_table(connection)
+        row = connection.execute(
+            "SELECT 1 FROM chatbot_jobs WHERE job_number = ? LIMIT 1",
+            (job_number,),
+        ).fetchone()
+    return row is not None
+
+
+def store_chatbot_job(item: dict[str, Any]) -> None:
+    job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
+    brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
+    status = get_field_value(item, JOB_STATUS_FIELD_NAME)
+    assets = get_field_value(item, JOB_ASSETS_FIELD_NAME)
+    output_files_link = get_field_value(item, JOB_OUTPUT_FILES_LINK_FIELD_NAME)
+
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as connection:
+        _create_table(connection)
+        connection.execute(
+            """
+            INSERT INTO chatbot_jobs (
+                job_number,
+                brief_number,
+                status,
+                assets,
+                output_files_link
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                job_number,
+                brief_number,
+                status,
+                assets,
+                output_files_link,
             ),
         )
         connection.commit()

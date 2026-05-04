@@ -12,6 +12,11 @@ BRIEF_CREATED_DATE_FIELD_NAME = "Created Date"
 BRIEF_CREATED_BY_CHATBOT_FIELD_NAME = "Created By ChatBot"
 BRIEF_LAST_MODIFIED_DATE_FIELD_NAME = "Last Modified Date"
 BRIEF_NUMBER_FIELD_NAME = "Brief Number"
+JOB_NUMBER_FIELD_NAME = "Job Number"
+JOB_BRIEF_NUMBER_FIELD_NAME = "Brief Number"
+JOB_STATUS_FIELD_NAME = "Status"
+JOB_ASSETS_FIELD_NAME = "Assets"
+JOB_OUTPUT_FILES_LINK_FIELD_NAME = "Link to Output Files (Client)"
 
 BRIEF_FIELDS: dict[str, str] = {
     "created_date": "fd_173",
