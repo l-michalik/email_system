@@ -84,5 +84,5 @@ def get_field_value(item: dict[str, Any], field_name: str) -> str:
     )
 
 
-def parse_brief_created_date(value: str) -> datetime:
+def parse_brief_last_modified_date(value: str) -> datetime:
     return datetime.strptime(value, "%m/%d/%Y, %H:%M")

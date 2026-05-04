@@ -31,6 +31,6 @@ JOB_FIELDS: dict[str, str] = {
 }
 
 MONITORED_MODULES: tuple[ModuleMonitor, ...] = (
-    ModuleMonitor("brief", 3, "created_date", BRIEF_FIELDS),
+    ModuleMonitor("brief", 3, "last_modified_date", BRIEF_FIELDS),
     ModuleMonitor("job", 14, "last_modified", JOB_FIELDS),
 )

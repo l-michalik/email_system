@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -8,8 +9,8 @@ import requests
 from config.constants import (
     BRIEF_CREATED_BY_CHATBOT_FIELD_NAME,
     BRIEF_CREATED_BY_CHATBOT_VALUE,
-    BRIEF_CREATED_DATE_FIELD_NAME,
     BRIEF_EMAIL_SUBJECT,
+    BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
     BRIEF_NUMBER_FIELD_NAME,
     CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
     MONITORED_MODULES,
@@ -32,7 +33,7 @@ from utils.monitoring import (
     cutoff_timestamp,
     fetch_all_pages,
     get_field_value,
-    parse_brief_created_date,
+    parse_brief_last_modified_date,
 )
 
 
@@ -127,43 +128,72 @@ def send_work_review_request_email(
     )
 
 
+def _log_fetch_window(label: str) -> tuple[datetime, datetime]:
+    window_end = datetime.now()
+    window_start = window_end - timedelta(minutes=POLL_WINDOW_MINUTES)
+    logging.info(
+        "Fetching %s modified between %s and %s (last %s minutes)",
+        label,
+        window_start.strftime("%H:%M"),
+        window_end.strftime("%H:%M"),
+        POLL_WINDOW_MINUTES,
+    )
+    return window_start, window_end
+
+
+def _process_recent_briefs(
+    items: list[dict[str, Any]],
+    window_start: datetime,
+    window_end: datetime,
+) -> None:
+    for item in items:
+        last_modified_date = get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME)
+        if not last_modified_date:
+            continue
+        modified_at = parse_brief_last_modified_date(last_modified_date)
+        if modified_at < window_start or modified_at > window_end:
+            continue
+        if (
+            get_field_value(item, BRIEF_CREATED_BY_CHATBOT_FIELD_NAME)
+            != BRIEF_CREATED_BY_CHATBOT_VALUE
+        ):
+            continue
+        brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+        if is_create_email_sent(brief_id):
+            continue
+        if not brief_exists(brief_id):
+            store_chatbot_brief(item)
+        send_brief_creation_email(brief_id)
+        mark_create_email_sent(brief_id)
+
+
 def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
     cutoff = cutoff_timestamp()
-    created_cutoff = datetime.now() - timedelta(minutes=POLL_WINDOW_MINUTES)
+    brief_monitor, job_monitor = MONITORED_MODULES
 
     with requests.Session() as session:
         token = get_token()
 
         results: list[MonitoringResult] = []
-        for monitor in MONITORED_MODULES:
-            query = build_query(
-                monitor.module_id,
-                monitor.query_field_name,
-                monitor.fields,
-                cutoff,
-            )
-            items = fetch_all_pages(session, settings.search_url, token, query)
+        brief_window_start, brief_window_end = _log_fetch_window("briefs")
+        brief_query = build_query(
+            brief_monitor.module_id,
+            brief_monitor.query_field_name,
+            brief_monitor.fields,
+            cutoff,
+        )
+        brief_items = fetch_all_pages(session, settings.search_url, token, brief_query)
+        _process_recent_briefs(brief_items, brief_window_start, brief_window_end)
+        results.append(MonitoringResult(monitor=brief_monitor, items=brief_items))
 
-            if monitor.label == "brief":
-                for item in items:
-                    if (
-                        get_field_value(item, BRIEF_CREATED_BY_CHATBOT_FIELD_NAME)
-                        != BRIEF_CREATED_BY_CHATBOT_VALUE
-                    ):
-                        continue
-                    brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
-                    if is_create_email_sent(brief_id):
-                        continue
-                    if not brief_exists(brief_id):
-                        store_chatbot_brief(item)
-                    send_brief_creation_email(brief_id)
-                    mark_create_email_sent(brief_id)
-                    created_at = parse_brief_created_date(
-                        get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
-                    )
-                    if created_at < created_cutoff:
-                        continue
-
-            results.append(MonitoringResult(monitor=monitor, items=items))
+        _log_fetch_window("jobs")
+        job_query = build_query(
+            job_monitor.module_id,
+            job_monitor.query_field_name,
+            job_monitor.fields,
+            cutoff,
+        )
+        job_items = fetch_all_pages(session, settings.search_url, token, job_query)
+        results.append(MonitoringResult(monitor=job_monitor, items=job_items))
 
         return results
