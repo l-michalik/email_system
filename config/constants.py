@@ -17,6 +17,7 @@ BRIEF_FIELDS: dict[str, str] = {
 
 JOB_FIELDS: dict[str, str] = {
     "Job Number": "471",
+    "Job Name": "975",
     "Brief Number": "1291",
     "Last Modified Date": "1285",
     "Status": "316",
