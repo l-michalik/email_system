@@ -7,18 +7,6 @@ from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from config.constants import (
-    BRIEF_CREATED_BY_CHATBOT_FIELD_NAME,
-    BRIEF_CREATED_DATE_FIELD_NAME,
-    BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
-    BRIEF_NUMBER_FIELD_NAME,
-    JOB_ASSETS_FIELD_NAME,
-    JOB_BRIEF_NUMBER_FIELD_NAME,
-    JOB_LAST_MODIFIED_DATE_FIELD_NAME,
-    JOB_NUMBER_FIELD_NAME,
-    JOB_OUTPUT_FILES_LINK_FIELD_NAME,
-    JOB_STATUS_FIELD_NAME,
-)
 from utils.monitoring import get_field_value
 
 
@@ -138,30 +126,30 @@ def _load_brief_row(brief_number: str) -> dict[str, Any] | None:
 
 def _brief_values_from_item(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
-        get_field_value(item, BRIEF_NUMBER_FIELD_NAME),
-        get_field_value(item, BRIEF_CREATED_BY_CHATBOT_FIELD_NAME),
-        get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME),
-        get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME),
-        get_field_value(item, BRIEF_DESCRIPTION_FIELD_NAME),
-        get_field_value(item, BRIEF_SLA_FIELD_NAME),
+        get_field_value(item, "Brief Number"),
+        get_field_value(item, "Created By ChatBot"),
+        get_field_value(item, "Created Date"),
+        get_field_value(item, "Last Modified Date"),
+        get_field_value(item, "Brief Description"),
+        get_field_value(item, "Brief SLA"),
         _get_json_field_value(item, WORK_TYPE_FIELD_NAME),
-        get_field_value(item, CLIENT_REVIEW_DEADLINE_FIELD_NAME),
-        get_field_value(item, DELIVERY_DEADLINE_FIELD_NAME),
-        get_field_value(item, BUDGET_FIELD_NAME),
-        _get_json_field_value(item, BRIEF_DOCUMENT_FIELD_NAME),
-        _get_json_field_value(item, SUPPORTING_DOCUMENTS_FIELD_NAME),
-        _get_json_field_value(item, MEDIA_PLANS_FIELD_NAME),
+        get_field_value(item, "Client Review Deadline"),
+        get_field_value(item, "Delivery Deadline"),
+        get_field_value(item, "Budget"),
+        _get_json_field_value(item, "Brief Document"),
+        _get_json_field_value(item, "Supporting Documents"),
+        _get_json_field_value(item, "Media Plans"),
     )
 
 
 def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) -> bool:
-    current_brief_description = get_field_value(current_item, BRIEF_DESCRIPTION_FIELD_NAME)
-    if previous[BRIEF_DESCRIPTION_FIELD_NAME] != current_brief_description:
+    current_brief_description = get_field_value(current_item, "Brief Description")
+    if previous["Brief Description"] != current_brief_description:
         return True
 
-    current_brief_sla = get_field_value(current_item, BRIEF_SLA_FIELD_NAME)
+    current_brief_sla = get_field_value(current_item, "Brief SLA")
     if (
-        (previous[BRIEF_SLA_FIELD_NAME] or "").strip().lower() == "standard sla"
+        (previous["Brief SLA"] or "").strip().lower() == "standard sla"
         and (current_brief_sla or "").strip().lower() == "rush sla"
     ):
         return True
@@ -170,9 +158,9 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
     if set(previous[WORK_TYPE_FIELD_NAME]) != set(current_work_type):
         return True
 
-    previous_client_review_deadline = _parse_date(previous[CLIENT_REVIEW_DEADLINE_FIELD_NAME])
+    previous_client_review_deadline = _parse_date(previous["Client Review Deadline"])
     current_client_review_deadline = _parse_date(
-        get_field_value(current_item, CLIENT_REVIEW_DEADLINE_FIELD_NAME)
+        get_field_value(current_item, "Client Review Deadline")
     )
     if (
         previous_client_review_deadline
@@ -181,9 +169,9 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
     ):
         return True
 
-    previous_delivery_deadline = _parse_date(previous[DELIVERY_DEADLINE_FIELD_NAME])
+    previous_delivery_deadline = _parse_date(previous["Delivery Deadline"])
     current_delivery_deadline = _parse_date(
-        get_field_value(current_item, DELIVERY_DEADLINE_FIELD_NAME)
+        get_field_value(current_item, "Delivery Deadline")
     )
     if (
         previous_delivery_deadline
@@ -192,15 +180,15 @@ def _should_send_update(previous: dict[str, Any], current_item: dict[str, Any]) 
     ):
         return True
 
-    previous_budget = _parse_decimal(previous[BUDGET_FIELD_NAME])
-    current_budget = _parse_decimal(get_field_value(current_item, BUDGET_FIELD_NAME))
+    previous_budget = _parse_decimal(previous["Budget"])
+    current_budget = _parse_decimal(get_field_value(current_item, "Budget"))
     if previous_budget is not None and current_budget is not None and current_budget < previous_budget:
         return True
 
     for field_name in (
-        BRIEF_DOCUMENT_FIELD_NAME,
-        SUPPORTING_DOCUMENTS_FIELD_NAME,
-        MEDIA_PLANS_FIELD_NAME,
+        "Brief Document",
+        "Supporting Documents",
+        "Media Plans",
     ):
         previous_files = set(previous[field_name])
         current_files = set(_get_field_values(current_item, field_name))
@@ -293,7 +281,7 @@ def get_chatbot_brief(brief_number: str) -> dict[str, Any] | None:
 
 
 def update_chatbot_brief(item: dict[str, Any]) -> None:
-    brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+    brief_number = get_field_value(item, "Brief Number")
     if not brief_number:
         return
 
@@ -335,7 +323,7 @@ def update_chatbot_brief(item: dict[str, Any]) -> None:
 
 
 def should_send_change_request_updated_email(item: dict[str, Any]) -> bool:
-    brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+    brief_number = get_field_value(item, "Brief Number")
     if not brief_number:
         return False
 
@@ -358,12 +346,12 @@ def job_exists(job_number: str) -> bool:
 
 
 def store_chatbot_job(item: dict[str, Any]) -> None:
-    job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
-    brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
-    last_modified_date = get_field_value(item, JOB_LAST_MODIFIED_DATE_FIELD_NAME)
-    status = get_field_value(item, JOB_STATUS_FIELD_NAME)
-    assets = get_field_value(item, JOB_ASSETS_FIELD_NAME)
-    output_files_link = get_field_value(item, JOB_OUTPUT_FILES_LINK_FIELD_NAME)
+    job_number = get_field_value(item, "Job Number")
+    brief_number = get_field_value(item, "Brief Number")
+    last_modified_date = get_field_value(item, "Last Modified Date")
+    status = get_field_value(item, "Status")
+    assets = get_field_value(item, "Assets")
+    output_files_link = get_field_value(item, "Link to Output Files (Client)")
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:

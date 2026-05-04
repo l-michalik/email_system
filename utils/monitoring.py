@@ -8,6 +8,10 @@ import requests
 from config.constants import PAGE_SIZE, POLL_WINDOW_MINUTES
 
 
+def _crm_field(field_id: str) -> str:
+    return f"FD_{field_id}"
+
+
 def cutoff_timestamp() -> str:
     cutoff = datetime.now(UTC) - timedelta(minutes=POLL_WINDOW_MINUTES)
     return cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -19,10 +23,10 @@ def build_query(
     fields: dict[str, str],
     cutoff: str,
 ) -> str:
-    selected_fields = ", ".join(fields.values())
+    selected_fields = ", ".join(_crm_field(field_id) for field_id in fields.values())
     return (
         f"SELECT {selected_fields} FROM MODULE_{module_id} "
-        f"WHERE {fields[query_field_name]} > '{cutoff}'"
+        f"WHERE {_crm_field(fields[query_field_name])} > '{cutoff}'"
     )
 
 

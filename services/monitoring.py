@@ -7,22 +7,8 @@ from typing import Any
 import requests
 
 from config.constants import (
-    CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
-    BRIEF_CREATED_DATE_FIELD_NAME,
-    BRIEF_EMAIL_SUBJECT,
-    BRIEF_LAST_MODIFIED_DATE_FIELD_NAME,
-    BRIEF_NUMBER_FIELD_NAME,
-    JOB_ASSETS_FIELD_NAME,
-    JOB_BRIEF_NUMBER_FIELD_NAME,
-    JOB_LAST_MODIFIED_DATE_FIELD_NAME,
-    JOB_NAME_FIELD_NAME,
-    JOB_NUMBER_FIELD_NAME,
-    JOB_OUTPUT_FILES_LINK_FIELD_NAME,
-    JOB_STATUS_CLIENT_REVIEW_VALUE,
-    JOB_STATUS_FIELD_NAME,
     MONITORED_MODULES,
     POLL_WINDOW_MINUTES,
-    WORK_REVIEW_REQUEST_EMAIL_SUBJECT,
 )
 from config.settings import AppSettings
 from schemas.monitoring import MonitoringResult
@@ -35,6 +21,7 @@ from utils.brief_storage import (
 )
 from utils.monitoring import (
     cutoff_timestamp,
+    build_query,
     fetch_all_pages,
     get_field_value,
     parse_brief_last_modified_date,
@@ -43,7 +30,7 @@ from utils.monitoring import (
 
 def create_brief_creation_email(brief_number: str) -> EmailTemplateContent:
     return EmailTemplateContent(
-        subject=BRIEF_EMAIL_SUBJECT,
+        subject="Your Brief Has Been Created – Please Save the Brief ID",
         title="Brief has been created successfully",
         subtitle=f"Brief Number: {brief_number}",
         body_text=(
@@ -58,7 +45,7 @@ def create_brief_creation_email(brief_number: str) -> EmailTemplateContent:
 
 def create_brief_update_email(brief_id: str) -> EmailTemplateContent:
     return EmailTemplateContent(
-        subject=CHANGE_REQUEST_UPDATED_EMAIL_SUBJECT,
+        subject="Your change request has been successfully updated",
         title="Your change request has been successfully updated",
         subtitle=f"Brief ID: {brief_id}",
         body_text=(
@@ -77,7 +64,7 @@ def create_work_review_request_email(
     job_number: str,
 ) -> EmailTemplateContent:
     return EmailTemplateContent(
-        subject=WORK_REVIEW_REQUEST_EMAIL_SUBJECT,
+        subject="Action Required: Review Your Asset",
         title="Your Asset is Ready for Review",
         subtitle=(
             f"Brief Number: {brief_number}\n"
@@ -134,8 +121,8 @@ def send_work_review_request_email(
 
 def _job_has_review_assets(item: dict[str, Any]) -> bool:
     return bool(
-        get_field_value(item, JOB_ASSETS_FIELD_NAME)
-        or get_field_value(item, JOB_OUTPUT_FILES_LINK_FIELD_NAME)
+        get_field_value(item, "Assets")
+        or get_field_value(item, "Link to Output Files (Client)")
     )
 
 
@@ -147,10 +134,10 @@ def should_send_work_review_request_email(
     item: dict[str, Any],
     window_start: datetime,
 ) -> bool:
-    job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
-    brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
-    last_modified_date = get_field_value(item, JOB_LAST_MODIFIED_DATE_FIELD_NAME)
-    status = get_field_value(item, JOB_STATUS_FIELD_NAME)
+    job_number = get_field_value(item, "Job Number")
+    brief_number = get_field_value(item, "Brief Number")
+    last_modified_date = get_field_value(item, "Last Modified Date")
+    status = get_field_value(item, "Status")
     if not last_modified_date or not status:
         logging.info(
             "Skipping work review email for job %s: missing last modified date or status (raw last modified=%s, status=%s)",
@@ -173,7 +160,7 @@ def should_send_work_review_request_email(
 
     normalized_status = _normalize_status(status)
     if normalized_status not in {
-        JOB_STATUS_CLIENT_REVIEW_VALUE,
+        "2828",
         "client review",
     }:
         logging.info(
@@ -218,17 +205,17 @@ def _process_recent_briefs(
     items: list[dict[str, Any]],
 ) -> None:
     for item in items:
-        created_date = get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
-        last_modified_date = get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME)
+        created_date = get_field_value(item, "Created Date")
+        last_modified_date = get_field_value(item, "Last Modified Date")
 
         created_at = parse_brief_last_modified_date(created_date)
         modified_at = parse_brief_last_modified_date(last_modified_date)
 
         if modified_at == created_at:
-            brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+            brief_id = get_field_value(item, "Brief Number")
             send_brief_creation_email(brief_id)
         elif should_send_change_request_updated_email(item):
-            brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+            brief_id = get_field_value(item, "Brief Number")
             send_change_request_updated_email(brief_id)
             update_chatbot_brief(item)
 
@@ -242,27 +229,31 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
 
         results: list[MonitoringResult] = []
         _log_fetch_window("briefs")
-        brief_query = (
-            f"SELECT * FROM MODULE_{brief_monitor.module_id} "
-            f"WHERE {brief_monitor.fields[brief_monitor.query_field_name]} > '{cutoff}'"
+        brief_query = build_query(
+            brief_monitor.module_id,
+            brief_monitor.query_field_name,
+            brief_monitor.fields,
+            cutoff,
         )
         brief_items = fetch_all_pages(session, settings.search_url, token, brief_query)
         _process_recent_briefs(brief_items)
         results.append(MonitoringResult(monitor=brief_monitor, items=brief_items))
 
         job_window_start, _ = _log_fetch_window("jobs")
-        job_query = (
-            f"SELECT * FROM MODULE_{job_monitor.module_id} "
-            f"WHERE {job_monitor.fields[job_monitor.query_field_name]} > '{cutoff}'"
+        job_query = build_query(
+            job_monitor.module_id,
+            job_monitor.query_field_name,
+            job_monitor.fields,
+            cutoff,
         )
         job_items = fetch_all_pages(session, settings.search_url, token, job_query)
         for item in job_items:
             if not should_send_work_review_request_email(item, job_window_start):
                 continue
 
-            brief_number = get_field_value(item, JOB_BRIEF_NUMBER_FIELD_NAME)
-            job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
-            job_name = get_field_value(item, JOB_NAME_FIELD_NAME) or job_number
+            brief_number = get_field_value(item, "Brief Number")
+            job_number = get_field_value(item, "Job Number")
+            job_name = get_field_value(item, "Job Name") or job_number
             if not brief_number or not job_number or not job_name:
                 logging.info(
                     "Skipping work review email because required job fields are missing: brief=%s, job=%s, name=%s",

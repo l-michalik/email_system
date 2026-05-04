@@ -4,7 +4,6 @@ import logging
 
 import requests
 
-from config.constants import BRIEF_NUMBER_FIELD_NAME, JOB_NUMBER_FIELD_NAME
 from config.settings import load_settings
 from utils import get_token
 from utils.brief_storage import (
@@ -36,7 +35,7 @@ def main() -> None:
 
         brief_numbers = set()
         for item in briefs:
-            brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+            brief_number = get_field_value(item, "Brief Number")
             if brief_number:
                 brief_numbers.add(brief_number)
         jobs = fetch_all_pages(
@@ -50,7 +49,7 @@ def main() -> None:
     stored_count = 0
     skipped_count = 0
     for item in briefs:
-        brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+        brief_number = get_field_value(item, "Brief Number")
         if not brief_number:
             continue
         if brief_exists(brief_number):
@@ -62,13 +61,13 @@ def main() -> None:
     stored_jobs_count = 0
     skipped_jobs_count = 0
     for item in jobs:
-        brief_number = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+        brief_number = get_field_value(item, "Brief Number")
         if not brief_number:
             continue
         if brief_number not in brief_numbers:
             continue
 
-        job_number = get_field_value(item, JOB_NUMBER_FIELD_NAME)
+        job_number = get_field_value(item, "Job Number")
         if not job_number:
             continue
         if job_exists(job_number):
