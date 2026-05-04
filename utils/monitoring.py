@@ -72,8 +72,11 @@ def fetch_all_pages(
     return items
 
 
-def get_field_value(item: dict[str, Any], field_name: str) -> str:
-    field = next(field for field in item["fields"] if field["name"] == field_name)
+def get_field_value(item: dict[str, Any], field_name: str) -> str | None:
+    field = next((field for field in item["fields"] if field["name"] == field_name), None)
+    if field is None:
+        return None
+
     options = field["options"]
     if not options:
         return None

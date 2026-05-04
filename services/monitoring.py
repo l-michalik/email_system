@@ -21,6 +21,10 @@ from schemas.monitoring import MonitoringResult
 from utils import get_token
 from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
 from utils.mailer import send_email
+from utils.brief_storage import (
+    should_send_change_request_updated_email,
+    update_chatbot_brief,
+)
 from utils.monitoring import (
     build_query,
     cutoff_timestamp,
@@ -138,16 +142,19 @@ def _process_recent_briefs(
     items: list[dict[str, Any]],
 ) -> None:
     for item in items:
-        # Condition one: Created Date must match Last Modified Date.
         created_date = get_field_value(item, BRIEF_CREATED_DATE_FIELD_NAME)
         last_modified_date = get_field_value(item, BRIEF_LAST_MODIFIED_DATE_FIELD_NAME)
-        
+
         created_at = parse_brief_last_modified_date(created_date)
         modified_at = parse_brief_last_modified_date(last_modified_date)
-        
+
         if modified_at == created_at:
             brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
             send_brief_creation_email(brief_id)
+        elif should_send_change_request_updated_email(item):
+            brief_id = get_field_value(item, BRIEF_NUMBER_FIELD_NAME)
+            send_change_request_updated_email(brief_id)
+            update_chatbot_brief(item)
 
 
 def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
@@ -159,11 +166,9 @@ def run_monitoring_once(settings: AppSettings) -> list[MonitoringResult]:
 
         results: list[MonitoringResult] = []
         brief_window_start, brief_window_end = _log_fetch_window("briefs")
-        brief_query = build_query(
-            brief_monitor.module_id,
-            brief_monitor.query_field_name,
-            brief_monitor.fields,
-            cutoff,
+        brief_query = (
+            f"SELECT * FROM MODULE_{brief_monitor.module_id} "
+            f"WHERE {brief_monitor.fields[brief_monitor.query_field_name]} > '{cutoff}'"
         )
         brief_items = fetch_all_pages(session, settings.search_url, token, brief_query)
         _process_recent_briefs(brief_items)

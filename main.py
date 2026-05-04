@@ -20,10 +20,6 @@ def main() -> None:
             result.monitor.module_id,
             len(result.items),
         )
-        logging.info(
-            "%s",
-            json.dumps(result.items, ensure_ascii=False, default=str),
-        )
 
 
 if __name__ == "__main__":
