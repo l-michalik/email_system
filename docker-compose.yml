@@ -1,0 +1,10 @@
+services:
+  email-system:
+    build:
+      context: .
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do python main.py; sleep 300; done"]
