@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+import logging
 import smtplib
 import ssl
-import logging
 from email.message import EmailMessage
+from typing import Callable
 
 from config.settings import load_settings
-
-
-logger = logging.getLogger(__name__)
 
 
 def build_message(
@@ -33,6 +31,7 @@ def send_email(
     body: str,
     recipient: str | None = None,
     html_body: str | None = None,
+    log_message_factory: Callable[[str], str] | None = None,
 ) -> None:
     settings = load_settings()
     resolved_recipient = recipient or settings.default_recipient
@@ -47,28 +46,26 @@ def send_email(
         html_body,
     )
     context = ssl.create_default_context()
-    logger.info(
-        "Connecting to SMTP host=%s port=%s recipient=%s subject=%s",
-        settings.smtp_host,
-        settings.smtp_port,
-        resolved_recipient,
-        subject,
-    )
+    logger = logging.getLogger(__name__)
 
     if settings.smtp_port == 465:
         with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=context) as client:
             client.login(settings.smtp_username, settings.smtp_password)
             client.send_message(message)
-        logger.info("SMTP email sent over SSL to %s", resolved_recipient)
+    else:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as client:
+            client.ehlo()
+            client.starttls(context=context)
+            client.ehlo()
+            client.login(settings.smtp_username, settings.smtp_password)
+            client.send_message(message)
+
+    logger = logging.getLogger(__name__)
+    if log_message_factory is None:
+        logger.info("Email sent: subject=%s recipient=%s", subject, resolved_recipient)
         return
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as client:
-        client.ehlo()
-        client.starttls(context=context)
-        client.ehlo()
-        client.login(settings.smtp_username, settings.smtp_password)
-        client.send_message(message)
-    logger.info("SMTP email sent over STARTTLS to %s", resolved_recipient)
+    logger.info(log_message_factory(resolved_recipient))
 
 
 def send_test_email() -> None:

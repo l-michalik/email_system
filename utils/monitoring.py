@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from config.constants import POLL_WINDOW_MINUTES
 
-logger = logging.getLogger(__name__)
 EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 

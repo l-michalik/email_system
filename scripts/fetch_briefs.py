@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import logging
-
 import requests
 
 from clients import CrmClient
 from config.constants import BRIEF_PAGE_SIZE
+from config.logging import configure_logging
 from config.settings import load_settings
 from utils.brief_storage import (
     brief_exists,
@@ -17,7 +16,7 @@ from utils.monitoring import get_field_value
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    configure_logging()
     settings = load_settings()
 
     with requests.Session() as session:
@@ -45,7 +44,6 @@ def main() -> None:
     for item in briefs:
         brief_number = get_field_value(item, "Brief Number")
         if not brief_number:
-            logging.info("Skipping brief without Brief Number")
             skipped_count += 1
             continue
         if brief_exists(brief_number):
@@ -63,7 +61,6 @@ def main() -> None:
 
         job_number = get_field_value(item, "Job Number")
         if not job_number:
-            logging.info("Skipping job without Job Number")
             skipped_jobs_count += 1
             continue
         if job_exists(job_number):
@@ -72,13 +69,6 @@ def main() -> None:
 
         store_chatbot_job(item)
         stored_jobs_count += 1
-
-    logging.info("Fetched %s briefs", len(briefs))
-    logging.info("Stored %s new briefs", stored_count)
-    logging.info("Skipped %s existing briefs", skipped_count)
-    logging.info("Fetched %s jobs", len(jobs))
-    logging.info("Stored %s new jobs", stored_jobs_count)
-    logging.info("Skipped %s existing jobs", skipped_jobs_count)
 
 
 if __name__ == "__main__":

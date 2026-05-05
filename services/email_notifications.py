@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import logging
-
 from clients import CrmItem
-from config.constants import CHATBOT_CREATED_BY_OPTION_ID
 from config.settings import AppSettings
 from utils.brief_storage import (
     get_chatbot_brief,
@@ -19,8 +16,6 @@ from utils.brief_storage import (
 from utils.email_templates import EmailTemplateContent, build_email_html, build_email_text
 from utils.mailer import send_email
 from utils.monitoring import get_field_email, get_field_value
-
-logger = logging.getLogger(__name__)
 
 CLIENT_REVIEW_STATUSES = {"2828"}
 CHATBOT_URL = "https://waa.mdbgo.io/"
@@ -79,22 +74,40 @@ def create_work_review_request_email(
 
 
 def send_template_email(content: EmailTemplateContent, recipient: str | None = None) -> None:
-    logger.info("Sending email with subject=%s recipient=%s", content.subject, recipient)
     send_email(
         content.subject,
         build_email_text(content),
         recipient=recipient,
         html_body=build_email_html(content),
     )
-    logger.info("Email sent with subject=%s recipient=%s", content.subject, recipient)
 
 
 def send_brief_creation_email(brief_id: str, recipient: str | None = None) -> None:
-    send_template_email(create_brief_creation_email(brief_id), recipient=recipient)
+    content = create_brief_creation_email(brief_id)
+    send_email(
+        content.subject,
+        build_email_text(content),
+        recipient=recipient,
+        html_body=build_email_html(content),
+        log_message_factory=lambda resolved_recipient: (
+            f"Email for brief id {brief_id} has been sent to "
+            f"'{resolved_recipient}' - New Brief"
+        ),
+    )
 
 
 def send_change_request_updated_email(brief_id: str, recipient: str | None = None) -> None:
-    send_template_email(create_brief_update_email(brief_id), recipient=recipient)
+    content = create_brief_update_email(brief_id)
+    send_email(
+        content.subject,
+        build_email_text(content),
+        recipient=recipient,
+        html_body=build_email_html(content),
+        log_message_factory=lambda resolved_recipient: (
+            f"Email for brief id {brief_id} has been sent to "
+            f"'{resolved_recipient}' - Change Request Updated"
+        ),
+    )
 
 
 def send_work_review_request_email(
@@ -108,45 +121,31 @@ def send_work_review_request_email(
 
 
 def process_recent_briefs(settings: AppSettings, items: list[CrmItem]) -> None:
-    logger.info("Processing %s recent briefs", len(items))
-
     for item in items:
         brief_number = get_field_value(item, "Brief Number")
         created_by_chatbot = get_field_value(item, "Created By ChatBot")
         created_date = get_field_value(item, "Created Date")
         last_modified_date = get_field_value(item, "Last Modified Date")
 
-        if created_by_chatbot != CHATBOT_CREATED_BY_OPTION_ID:
-            logger.info("Skipping brief %s because it is not chatbot-created", brief_number)
+        if created_by_chatbot != "Yes":
             continue
 
         if not brief_number or not created_date or not last_modified_date:
-            logger.info(
-                "Skipping brief notification because required fields are missing: "
-                "brief=%s created_by_chatbot=%s created=%s modified=%s",
-                brief_number,
-                created_by_chatbot,
-                created_date,
-                last_modified_date,
-            )
             continue
 
         recipient = _resolve_recipient(settings, item)
         is_new_brief = get_chatbot_brief(brief_number) is None
 
         if is_new_brief:
-            logger.info("Brief %s is new in local monitoring snapshot", brief_number)
             if recipient is None:
-                logger.info("Skipping brief %s creation email: missing recipient", brief_number)
-            elif not has_sent_notification("brief_created", brief_number):
+                continue
+            if not has_sent_notification("brief_created", brief_number):
                 send_brief_creation_email(brief_number, recipient=recipient)
                 mark_create_email_sent(brief_number)
-
         elif should_send_change_request_updated_email(item):
-            logger.info("Brief %s has a change request update", brief_number)
             if recipient is None:
-                logger.info("Skipping brief %s update email: missing recipient", brief_number)
-            elif not has_sent_notification("brief_updated", brief_number, last_modified_date):
+                continue
+            if not has_sent_notification("brief_updated", brief_number, last_modified_date):
                 send_change_request_updated_email(brief_number, recipient=recipient)
                 record_notification("brief_updated", brief_number, last_modified_date)
 
@@ -154,51 +153,30 @@ def process_recent_briefs(settings: AppSettings, items: list[CrmItem]) -> None:
 
 
 def process_review_jobs(settings: AppSettings, items: list[CrmItem]) -> None:
-    logger.info("Processing %s recent jobs", len(items))
-
     for item in items:
         brief_number = get_field_value(item, "Brief Number")
         job_number = get_field_value(item, "Job Number")
         last_modified_date = get_field_value(item, "Last Modified Date")
         job_name = get_field_value(item, "Job Name") or job_number
         if not brief_number or not job_number or not job_name or not last_modified_date:
-            logger.info(
-                "Skipping work review email because required job fields are missing: "
-                "brief=%s job=%s name=%s modified=%s",
-                brief_number,
-                job_number,
-                job_name,
-                last_modified_date,
-            )
             continue
 
         previous_job = get_chatbot_job(job_number)
         if should_send_work_review_request_email(item, previous_job):
             if not is_chatbot_brief(brief_number):
-                logger.info(
-                    "Skipping work review email for job %s: brief %s is not chatbot-created",
-                    job_number,
+                continue
+
+            recipient = _resolve_recipient(settings, item)
+            if recipient is None:
+                continue
+            if not has_sent_notification("job_client_review", job_number, last_modified_date):
+                send_work_review_request_email(
                     brief_number,
+                    job_name,
+                    job_number,
+                    recipient=recipient,
                 )
-            else:
-                recipient = _resolve_recipient(settings, item)
-                if recipient is None:
-                    logger.info("Skipping work review email for job %s: missing recipient", job_number)
-                elif not has_sent_notification("job_client_review", job_number, last_modified_date):
-                    logger.info(
-                        "Sending work review email for job %s (brief %s, name %s) to %s",
-                        job_number,
-                        brief_number,
-                        job_name,
-                        recipient,
-                    )
-                    send_work_review_request_email(
-                        brief_number,
-                        job_name,
-                        job_number,
-                        recipient=recipient,
-                    )
-                    record_notification("job_client_review", job_number, last_modified_date)
+                record_notification("job_client_review", job_number, last_modified_date)
 
         save_chatbot_job(item)
 
@@ -207,47 +185,22 @@ def should_send_work_review_request_email(
     item: CrmItem,
     previous_job: dict[str, str] | None,
 ) -> bool:
-    job_number = get_field_value(item, "Job Number")
-    brief_number = get_field_value(item, "Brief Number")
     last_modified_date = get_field_value(item, "Last Modified Date")
     status = get_field_value(item, "Status")
     if not last_modified_date or not status:
-        logger.info(
-            "Skipping work review email for job %s: missing last modified date or status",
-            job_number or "<unknown>",
-        )
         return False
 
     normalized_status = status.strip().lower()
     if normalized_status not in CLIENT_REVIEW_STATUSES:
-        logger.info(
-            "Skipping work review email for job %s: status=%s",
-            job_number or "<unknown>",
-            status,
-        )
         return False
 
     if not _job_has_review_assets(item):
-        logger.info(
-            "Skipping work review email for job %s: no assets or output files link found",
-            job_number or "<unknown>",
-        )
         return False
 
     previous_status = (previous_job or {}).get("status")
     if previous_status and previous_status.strip().lower() in CLIENT_REVIEW_STATUSES:
-        logger.info(
-            "Skipping work review email for job %s: status already recorded as Client Review",
-            job_number or "<unknown>",
-        )
         return False
 
-    logger.info(
-        "Work review email is eligible for job %s (brief %s, modified=%s)",
-        job_number or "<unknown>",
-        brief_number or "<unknown>",
-        last_modified_date,
-    )
     return True
 
 

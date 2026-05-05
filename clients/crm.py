@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import requests
@@ -9,8 +8,6 @@ from config.constants import PAGE_SIZE
 from config.settings import AppSettings
 
 CrmItem = dict[str, Any]
-
-logger = logging.getLogger(__name__)
 
 
 class CrmClient:
@@ -40,7 +37,6 @@ class CrmClient:
         start: int,
         page_size: int = PAGE_SIZE,
     ) -> list[CrmItem]:
-        logger.info("Fetching CRM page start=%s limit=%s", start, page_size)
         response = self._session.post(
             self._settings.search_url,
             headers={
@@ -56,9 +52,7 @@ class CrmClient:
             timeout=30,
         )
         response.raise_for_status()
-        items: list[CrmItem] = response.json()["result"]
-        logger.info("Fetched %s CRM items from page start=%s", len(items), start)
-        return items
+        return response.json()["result"]
 
     def fetch_all_pages(
         self,
@@ -76,5 +70,4 @@ class CrmClient:
                 break
             start += page_size
 
-        logger.info("Fetched %s CRM items across all pages", len(items))
         return items
