@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import requests
 
 from clients import CrmClient
@@ -13,6 +15,8 @@ from utils.brief_storage import (
     store_chatbot_job,
 )
 from utils.monitoring import get_field_value
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -69,6 +73,11 @@ def main() -> None:
 
         store_chatbot_job(item)
         stored_jobs_count += 1
+
+    logger.info("Saved %d briefs to database", stored_count)
+    logger.info("Skipped %d briefs", skipped_count)
+    logger.info("Saved %d jobs to database", stored_jobs_count)
+    logger.info("Skipped %d jobs", skipped_jobs_count)
 
 
 if __name__ == "__main__":
