@@ -7,7 +7,6 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from config.constants import CHATBOT_CREATED_BY_OPTION_ID
 from utils.monitoring import get_field_value
 
 
@@ -587,7 +586,7 @@ def is_chatbot_brief(brief_number: str) -> bool:
     if brief is None:
         return False
 
-    return brief["created_by_chatbot"] == CHATBOT_CREATED_BY_OPTION_ID
+    return brief["created_by_chatbot"] == 'Yes'
 
 
 def is_create_email_sent(brief_number: str) -> bool:

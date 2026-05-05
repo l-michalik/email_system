@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from typing import Callable
+
 from clients import CrmItem
 from config.settings import AppSettings
 from utils.brief_storage import (
@@ -17,8 +20,9 @@ from utils.email_templates import EmailTemplateContent, build_email_html, build_
 from utils.mailer import send_email
 from utils.monitoring import get_field_email, get_field_value
 
-CLIENT_REVIEW_STATUSES = {"2828"}
+CLIENT_REVIEW_STATUSES = {"client review"}
 CHATBOT_URL = "https://waa.mdbgo.io/"
+logger = logging.getLogger(__name__)
 
 
 def create_brief_creation_email(brief_number: str) -> EmailTemplateContent:
@@ -73,12 +77,17 @@ def create_work_review_request_email(
     )
 
 
-def send_template_email(content: EmailTemplateContent, recipient: str | None = None) -> None:
+def send_template_email(
+    content: EmailTemplateContent,
+    recipient: str | None = None,
+    log_message_factory: Callable[[str], str] | None = None,
+) -> None:
     send_email(
         content.subject,
         build_email_text(content),
         recipient=recipient,
         html_body=build_email_html(content),
+        log_message_factory=log_message_factory,
     )
 
 
@@ -117,7 +126,14 @@ def send_work_review_request_email(
     recipient: str | None = None,
 ) -> None:
     content = create_work_review_request_email(brief_number, job_name, job_number)
-    send_template_email(content, recipient=recipient)
+    send_template_email(
+        content,
+        recipient=recipient,
+        log_message_factory=lambda resolved_recipient: (
+            f"Email for brief id {brief_number} has been sent to "
+            f"'{resolved_recipient}' - Job Moved to Client Review"
+        ),
+    )
 
 
 def process_recent_briefs(settings: AppSettings, items: list[CrmItem]) -> None:
@@ -159,24 +175,72 @@ def process_review_jobs(settings: AppSettings, items: list[CrmItem]) -> None:
         last_modified_date = get_field_value(item, "Last Modified Date")
         job_name = get_field_value(item, "Job Name") or job_number
         if not brief_number or not job_number or not job_name or not last_modified_date:
+            logger.info(
+                "Skipping job_client_review: job_number=%s brief_number=%s job_name=%s last_modified_date=%s (missing required field)",
+                job_number or "<missing>",
+                brief_number or "<missing>",
+                job_name or "<missing>",
+                last_modified_date or "<missing>",
+            )
             continue
 
         previous_job = get_chatbot_job(job_number)
-        if should_send_work_review_request_email(item, previous_job):
-            if not is_chatbot_brief(brief_number):
-                continue
+        review_skip_reason = _get_work_review_skip_reason(item, previous_job)
+        if review_skip_reason is not None:
+            logger.info(
+                "Skipping job_client_review for job_number=%s brief_number=%s: %s",
+                job_number,
+                brief_number,
+                review_skip_reason,
+            )
+            save_chatbot_job(item)
+            continue
 
-            recipient = _resolve_recipient(settings, item)
-            if recipient is None:
-                continue
-            if not has_sent_notification("job_client_review", job_number, last_modified_date):
-                send_work_review_request_email(
-                    brief_number,
-                    job_name,
-                    job_number,
-                    recipient=recipient,
-                )
-                record_notification("job_client_review", job_number, last_modified_date)
+        if not is_chatbot_brief(brief_number):
+            logger.info(
+                "Skipping job_client_review for job_number=%s brief_number=%s: brief is not stored as chatbot brief",
+                job_number,
+                brief_number,
+            )
+            save_chatbot_job(item)
+            continue
+
+        recipient = _resolve_recipient(settings, item)
+        if recipient is None:
+            logger.info(
+                "Skipping job_client_review for job_number=%s brief_number=%s: recipient could not be resolved from default_recipient or Main Client Contact",
+                job_number,
+                brief_number,
+            )
+            save_chatbot_job(item)
+            continue
+
+        if has_sent_notification("job_client_review", job_number, last_modified_date):
+            logger.info(
+                "Skipping job_client_review for job_number=%s brief_number=%s: notification already sent for event_key=job_client_review:%s:%s",
+                job_number,
+                brief_number,
+                job_number,
+                last_modified_date,
+            )
+            save_chatbot_job(item)
+            continue
+
+        logger.info(
+            "Sending job_client_review email for job_number=%s brief_number=%s recipient=%s event_key=job_client_review:%s:%s",
+            job_number,
+            brief_number,
+            recipient,
+            job_number,
+            last_modified_date,
+        )
+        send_work_review_request_email(
+            brief_number,
+            job_name,
+            job_number,
+            recipient=recipient,
+        )
+        record_notification("job_client_review", job_number, last_modified_date)
 
         save_chatbot_job(item)
 
@@ -185,23 +249,48 @@ def should_send_work_review_request_email(
     item: CrmItem,
     previous_job: dict[str, str] | None,
 ) -> bool:
+    return _get_work_review_skip_reason(item, previous_job) is None
+
+
+def _get_work_review_skip_reason(
+    item: CrmItem,
+    previous_job: dict[str, str] | None,
+) -> str | None:
+    job_number = get_field_value(item, "Job Number") or "<unknown>"
+    brief_number = get_field_value(item, "Brief Number") or "<unknown>"
     last_modified_date = get_field_value(item, "Last Modified Date")
     status = get_field_value(item, "Status")
     if not last_modified_date or not status:
-        return False
+        missing_fields = []
+        if not last_modified_date:
+            missing_fields.append("Last Modified Date")
+        if not status:
+            missing_fields.append("Status")
+        return f"missing required field(s): {', '.join(missing_fields)}"
 
     normalized_status = status.strip().lower()
     if normalized_status not in CLIENT_REVIEW_STATUSES:
-        return False
+        return (
+            "status is not client review: "
+            f"status={status!r} expected_status_codes={sorted(CLIENT_REVIEW_STATUSES)!r}"
+        )
 
     if not _job_has_review_assets(item):
-        return False
+        assets = get_field_value(item, "Assets")
+        output_files_link = get_field_value(item, "Link to Output Files (Client)")
+        return (
+            "missing review assets: "
+            f"Assets={assets!r} Link to Output Files (Client)={output_files_link!r}"
+        )
 
     previous_status = (previous_job or {}).get("status")
     if previous_status and previous_status.strip().lower() in CLIENT_REVIEW_STATUSES:
-        return False
+        return (
+            "previous status is already client review: "
+            f"previous_status={previous_status!r}"
+        )
 
-    return True
+    return None
 
 
 def _job_has_review_assets(item: CrmItem) -> bool:
